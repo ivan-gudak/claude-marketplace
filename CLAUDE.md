@@ -5,7 +5,7 @@ Guidance for Claude Code when working in this repository.
 ## What this repo is
 
 A private Claude Code plugin marketplace hosted at `github.com/ihudak/claude-marketplace`.
-Registered in `~/.claude/plugins/known_marketplaces.json` as `claude-marketplace`.
+Registered in `~/.claude/plugins/known_marketplaces.json` as `ihudak-plugins`.
 
 ## Structure
 
