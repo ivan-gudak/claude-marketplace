@@ -16,7 +16,7 @@
       },
       "category": "development",
       "source": "./plugins/dev-workflows",
-      "homepage": "https://github.com/ihudak/claude-marketplace/tree/main/plugins/dev-workflows"
+      "homepage": "https://github.com/ihudak/ihudak-claude-plugins/tree/main/plugins/dev-workflows"
     },
     {
       "name": "engineering-practices",
@@ -27,7 +27,7 @@
       },
       "category": "development",
       "source": "./plugins/engineering-practices",
-      "homepage": "https://github.com/ihudak/claude-marketplace/tree/main/plugins/engineering-practices"
+      "homepage": "https://github.com/ihudak/ihudak-claude-plugins/tree/main/plugins/engineering-practices"
     },
     {
       "name": "productivity",
@@ -38,7 +38,7 @@
       },
       "category": "productivity",
       "source": "./plugins/productivity",
-      "homepage": "https://github.com/ihudak/claude-marketplace/tree/main/plugins/productivity"
+      "homepage": "https://github.com/ihudak/ihudak-claude-plugins/tree/main/plugins/productivity"
     },
     {
       "name": "planning",
@@ -49,7 +49,7 @@
       },
       "category": "development",
       "source": "./plugins/planning",
-      "homepage": "https://github.com/ihudak/claude-marketplace/tree/main/plugins/planning"
+      "homepage": "https://github.com/ihudak/ihudak-claude-plugins/tree/main/plugins/planning"
     },
     {
       "name": "obsidian-llm-wiki",
@@ -60,7 +60,7 @@
       },
       "category": "productivity",
       "source": "./plugins/obsidian-llm-wiki",
-      "homepage": "https://github.com/ihudak/claude-marketplace/tree/main/plugins/obsidian-llm-wiki"
+      "homepage": "https://github.com/ihudak/ihudak-claude-plugins/tree/main/plugins/obsidian-llm-wiki"
     }
   ]
 }

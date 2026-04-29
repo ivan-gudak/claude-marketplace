@@ -29,7 +29,7 @@ echo "Model routing: classify task as SIMPLE / MODERATE / SIGNIFICANT / HIGH-RIS
 echo "  SIGNIFICANT / HIGH-RISK -> plan with risk-planner (Opus), code-review (Opus)"
 echo "  BEFORE running tests. Invoke via Agent(subagent_type: general-purpose,"
 echo "  model: opus) + prompt to read ~/.claude/agents/<name>.md."
-echo "  Full rules: ~/.claude/plugins/data/dev-workflows@claude-marketplace/references/model-routing/classification.md"
+echo "  Full rules: ~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/references/model-routing/classification.md"
 if git rev-parse --git-dir > /dev/null 2>&1; then
     echo "Branch: $(git branch --show-current 2>/dev/null || echo 'unknown')"
     echo "Status:"

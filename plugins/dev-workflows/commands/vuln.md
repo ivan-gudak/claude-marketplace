@@ -3,9 +3,9 @@ Fix security vulnerabilities: $ARGUMENTS
 Each argument token is either `JIRA-ID:CVE-ID` (e.g. `MGD-2423:CVE-2023-46604`) or a bare `CVE-ID` (e.g. `CVE-2023-46604`). Parse and filter each token (steps 1–2), then research all CVEs in two parallel rounds (step 3) before applying fixes sequentially (steps 5 onward).
 
 Reference files (read when needed):
-- Build system detection: `~/.claude/plugins/data/dev-workflows@claude-marketplace/references/fix-vuln/build-systems.md`
-- NVD API usage: `~/.claude/plugins/data/dev-workflows@claude-marketplace/references/fix-vuln/nvd-api.md`
-- Model routing: `~/.claude/plugins/data/dev-workflows@claude-marketplace/references/model-routing/classification.md`
+- Build system detection: `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/references/fix-vuln/build-systems.md`
+- NVD API usage: `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/references/fix-vuln/nvd-api.md`
+- Model routing: `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/references/model-routing/classification.md`
 
 ---
 
@@ -27,13 +27,13 @@ For each vulnerability token:
    Spawn all of the following simultaneously in a single message:
 
    - **NVD agent per CVE-ID** (general-purpose, needs WebFetch/WebSearch):
-     > "Fetch CVE details for [CVE-ID] using the NVD API. Reference: `~/.claude/plugins/data/dev-workflows@claude-marketplace/references/fix-vuln/nvd-api.md`.
+     > "Fetch CVE details for [CVE-ID] using the NVD API. Reference: `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/references/fix-vuln/nvd-api.md`.
      > Return: affected package name, vulnerable version range, minimum safe version, one-line CVE description."
 
    - **Baseline agent** (once per batch, not per CVE) — invoke via `general-purpose` with
      the test-baseline system prompt loaded from file:
      > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
-     > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/test-baseline.md` if absent).
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/test-baseline.md` if absent).
      > Then run in **capture** mode and return the structured baseline result."
      >
      > If neither path exists, warn the user to run `install.sh` and skip the baseline step.
@@ -47,7 +47,7 @@ For each vulnerability token:
    - **Detect agent per CVE** (general-purpose, needs Read/Glob/Grep/LS tools):
      > "Scan this repository for the dependency [package name returned by NVD for CVE-ID].
      > Check all build and manifest files: pom.xml, build.gradle, build.gradle.kts, package.json, requirements.txt, go.mod, Cargo.toml, *.csproj, Gemfile, composer.json.
-     > Reference: `~/.claude/plugins/data/dev-workflows@claude-marketplace/references/fix-vuln/build-systems.md`.
+     > Reference: `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/references/fix-vuln/build-systems.md`.
      > Return: current version in use, file paths where the dependency appears."
 
    **Wait for all Round B agents to complete before proceeding.**
@@ -87,7 +87,7 @@ For CVEs classified `MODERATE`, fix one at a time:
 4. **Run tests** — Re-run the test suite.
 5. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Research step 3:
    > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
-   > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/test-baseline.md` if absent).
+   > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/test-baseline.md` if absent).
    > Run in **verify** mode. Baseline: [paste the captured baseline block]."
 
    If `Regressions` or `Missing from run` lists any tests: present them clearly and ask the user to choose — proceed anyway, revert, or investigate further.
@@ -105,7 +105,7 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
    → Agent (subagent_type: "general-purpose", model: "opus"):
      > "Read and adopt the system prompt at `~/.claude/agents/risk-planner.md`
-     > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/risk-planner.md` if absent).
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/risk-planner.md` if absent).
      > Then produce the risk-weighted plan for:
      >
      > Task description: Remediate [CVE-ID] in [repo name]. Upgrade [library] from [current version] to [target version]. [One-line CVE description.]
@@ -126,7 +126,7 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
    → Agent (subagent_type: "general-purpose", model: "opus"):
      > "Read and adopt the system prompt at `~/.claude/agents/code-review.md`
-     > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/code-review.md` if absent).
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/code-review.md` if absent).
      > Then produce the Opus code review for this brief, focusing especially on security, dependency risk, migration (library API changes), and rollback:
      >
      > Task description: Remediate [CVE-ID] — upgrade [library] from [current] to [target].
@@ -145,7 +145,7 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
    → Agent (subagent_type: "general-purpose"):
      > "Read and adopt the system prompt at `~/.claude/agents/review-fixer.md`
-     > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/review-fixer.md` if absent).
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/review-fixer.md` if absent).
      > Then fix the review findings for this brief:
      >
      > Task description: Remediate [CVE-ID] — upgrade [library] from [current] to [target].
@@ -159,7 +159,7 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
 7. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Round A of research step 3:
    > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
-   > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/test-baseline.md` if absent).
+   > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/test-baseline.md` if absent).
    > Run in **verify** mode. Baseline: [paste the captured baseline block]."
 
    Act on the verify report:
@@ -222,7 +222,7 @@ After all CVEs in the batch have been processed (fixed, committed, and PRed — 
 
 → Agent (subagent_type: "general-purpose"):
   > "Read and adopt the system prompt at `~/.claude/agents/impl-maintenance.md`
-  > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/impl-maintenance.md` if absent).
+  > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/impl-maintenance.md` if absent).
   > Then analyse this session and return a Lessons Learned report.
   >
   > Session handoff:

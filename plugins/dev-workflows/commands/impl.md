@@ -2,7 +2,7 @@ Implement the following: $ARGUMENTS
 
 If the argument starts with `@`, treat it as a path to a markdown file. Resolve relative to the current working directory. Read its full content and use it as the description. Echo `📄 Reading prompt from \`<file>\`…` before proceeding. If the file cannot be read, stop and report the error immediately.
 
-Reference: model-routing rules live at `~/.claude/plugins/data/dev-workflows@claude-marketplace/references/model-routing/classification.md`. The classification step below, and any Opus-gated steps, follow that file verbatim.
+Reference: model-routing rules live at `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/references/model-routing/classification.md`. The classification step below, and any Opus-gated steps, follow that file verbatim.
 
 ---
 
@@ -36,7 +36,7 @@ If **nothing** is ambiguous, skip directly to Phase 1.5.
 
 ## Phase 1.5 — Classify task complexity
 
-Read `~/.claude/plugins/data/dev-workflows@claude-marketplace/references/model-routing/classification.md`. Classify the task as exactly one of:
+Read `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/references/model-routing/classification.md`. Classify the task as exactly one of:
 
 - **SIMPLE** — local, trivial, clearly reversible; no mandatory Opus steps
 - **MODERATE** — bounded scope, few files, clear requirements; no mandatory Opus steps
@@ -103,7 +103,7 @@ user-level agent auto-discovery is active in the current session.
 → Agent (subagent_type: "general-purpose", model: "opus"):
   > "Read and adopt the system prompt at `~/.claude/agents/risk-planner.md`
   > (the user-level agent installed by the dev-workflows plugin; fall back to
-  > `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/risk-planner.md` if the install path is
+  > `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/risk-planner.md` if the install path is
   > absent). Then produce the risk-weighted plan described in that prompt for
   > the following brief:
   >
@@ -190,7 +190,7 @@ Use the currently selected model or Sonnet for implementation itself. Opus is re
 
    → Agent (subagent_type: "general-purpose", model: "opus"):
      > "Read and adopt the system prompt at `~/.claude/agents/code-review.md`
-     > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/code-review.md` if the
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/code-review.md` if the
      > install path is absent). Then produce the Opus code review for this brief:
      >
      > Task description: [substitute full description]
@@ -209,7 +209,7 @@ Use the currently selected model or Sonnet for implementation itself. Opus is re
 
    → Agent (subagent_type: "general-purpose"):
      > "Read and adopt the system prompt at `~/.claude/agents/review-fixer.md`
-     > (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/review-fixer.md` if absent).
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/review-fixer.md` if absent).
      > Then fix the review findings for this brief:
      >
      > Task description: [substitute full description]
@@ -282,7 +282,7 @@ Then spawn all four agents. They are independent and can run in any order — sp
 
 **Agent 4 — Session maintenance** (general-purpose):
 > "Read and adopt the system prompt at `~/.claude/agents/impl-maintenance.md`
-> (fall back to `~/.claude/plugins/data/dev-workflows@claude-marketplace/agents/impl-maintenance.md` if absent).
+> (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/impl-maintenance.md` if absent).
 > Then analyse this session and return a Lessons Learned report.
 >
 > Session handoff:

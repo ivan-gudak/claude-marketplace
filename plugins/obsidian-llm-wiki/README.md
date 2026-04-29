@@ -83,7 +83,7 @@ into your vault's instruction files (one-time, commit to the vault repo).
 
 #### Claude Code (marketplace)
 
-The marketplace is registered as **`ihudak-plugins`** (pointing to `ihudak/claude-marketplace`
+The marketplace is registered as **`ihudak-plugins`** (pointing to `ihudak/ihudak-claude-plugins`
 on GitHub). If it is not yet registered on your machine, add it once via Claude Code settings
 or the `/plugin` command, then install:
 
@@ -104,11 +104,11 @@ cc --plugin-dir /path/to/obsidian-llm-wiki
 
 Register the marketplace once, then install:
 ```bash
-copilot plugin marketplace add ihudak/copilot-marketplace
-copilot plugin install obsidian-llm-wiki@copilot-marketplace
+copilot plugin marketplace add ihudak/ihudak-copilot-plugins
+copilot plugin install obsidian-llm-wiki@ihudak-copilot-plugins
 ```
 
-Plugin installs to `~/.copilot/installed-plugins/copilot-marketplace/obsidian-llm-wiki/`.
+Plugin installs to `~/.copilot/installed-plugins/ihudak-copilot-plugins/obsidian-llm-wiki/`.
 
 ---
 
