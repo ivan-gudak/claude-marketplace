@@ -26,15 +26,15 @@ Vault path: `~/obsidian_vault` by default; set `VAULT_PATH` to override. WSL use
 
 ## Step 2 — Read recent activity
 
-1. Read the last 10 entries of `Knowledge/wiki/_log.md` (top of file — newest first).
-2. Read `Knowledge/wiki/_index.md` to understand current wiki scope.
+1. Read the last 10 entries of `wiki/_log.md` (top of file — newest first).
+2. Read `wiki/_index.md` to understand current wiki scope.
 3. For any pages created or updated in the last 3 log entries: read those pages.
 
 ---
 
 ## Step 3 — Write hot.md
 
-Overwrite `Knowledge/wiki/hot.md` completely with a fresh summary following the format
+Overwrite `wiki/hot.md` completely with a fresh summary following the format
 from `wiki-schema`:
 
 ```markdown
@@ -82,5 +82,5 @@ Constraints:
 ## Finish
 
 ```
-Hot cache refreshed. Knowledge/wiki/hot.md updated (YYYY-MM-DD).
+Hot cache refreshed. wiki/hot.md updated (YYYY-MM-DD).
 ```

@@ -60,7 +60,7 @@ Layer 2 — Inbox (read + archive after processing):
                             npx defuddle parse <file> --md
 
 Layer 3 — Wiki output (write exclusively here):
-  Knowledge/wiki/      ← all wiki pages and meta files
+  wiki/      ← all wiki pages and meta files
 ```
 
 ---
@@ -68,7 +68,7 @@ Layer 3 — Wiki output (write exclusively here):
 ## Wiki Output Structure
 
 ```
-Knowledge/wiki/
+wiki/
 ├── _index.md          ← master catalog (every page, one-line summary, category)
 ├── _log.md            ← append-only operation log
 ├── _manifest.json     ← delta tracker {filepath: {hash, ingested_at, wiki_pages[]}}
@@ -234,7 +234,7 @@ Most applicable tags for wiki pages:
 If content clearly needs a tag that does not exist: use the closest existing tag AND
 note `tag-needed: <proposed-tag>` in the `_log.md` ingest entry. The user can then
 approve and add it via `/wiki-tags-refresh` (Claude Code) or `wiki-tags-refresh:` (Copilot),
-which scans `Knowledge/wiki/` for undocumented tags and updates `tag-index.md`.
+which scans `wiki/` for undocumented tags and updates `tag-index.md`.
 
 ---
 
@@ -352,16 +352,16 @@ Tracks ingested files to prevent duplicate processing.
       "hash": "abc123def456",
       "ingested_at": "2026-04-28",
       "wiki_pages": [
-        "Knowledge/wiki/concepts/MCP Server.md",
-        "Knowledge/wiki/decisions/Use gRPC for MCP Transport.md"
+        "wiki/concepts/MCP Server.md",
+        "wiki/decisions/Use gRPC for MCP Transport.md"
       ]
     },
     ".raw/articles/llm-wiki-2026-04-20.md": {
       "hash": "789xyz012",
       "ingested_at": "2026-04-28",
       "wiki_pages": [
-        "Knowledge/wiki/sources/LLM Wiki Article.md",
-        "Knowledge/wiki/patterns/Hot Cache Pattern.md"
+        "wiki/sources/LLM Wiki Article.md",
+        "wiki/patterns/Hot Cache Pattern.md"
       ]
     }
   }

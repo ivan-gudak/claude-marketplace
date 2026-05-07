@@ -1,7 +1,7 @@
 ---
 name: wiki-tags-refresh
 description: >
-  Scan Knowledge/wiki/ for tags used in wiki page frontmatter, diff against the vault's
+  Scan wiki/ for tags used in wiki page frontmatter, diff against the vault's
   tag-index.md, prompt the user to approve new tags and clean stale ones, then update
   tag-index.md in place. Mirrors the vault's /tags-refresh workflow but scoped to wiki
   pages. Run after heavy ingest sessions when new concepts may have introduced new tags.
@@ -35,12 +35,12 @@ Read `.obsidian/copilot/tag-index.md` fully. Extract every documented tag (lines
 
 ## Step 3 — Collect tags from wiki pages
 
-Scan every `.md` file under `Knowledge/wiki/` for frontmatter `tags:` entries only.
+Scan every `.md` file under `wiki/` for frontmatter `tags:` entries only.
 The previous broad grep also matched `related:` wikilinks — use the awk approach below
 to stay strictly within the `tags:` block:
 
 ```bash
-find "Knowledge/wiki" -name "*.md" | xargs awk '
+find "wiki" -name "*.md" | xargs awk '
   FNR==1{front=0; intags=0}
   /^---/{if(front==0) front=1; else front=0; next}
   !front{next}
@@ -54,7 +54,7 @@ find "Knowledge/wiki" -name "*.md" | xargs awk '
 
 Also collect inline tags from page bodies:
 ```bash
-grep -roh "#[a-zA-Z][a-zA-Z0-9/_-]*" "Knowledge/wiki/" | grep -v "^#" | sort -u
+grep -roh "#[a-zA-Z][a-zA-Z0-9/_-]*" "wiki/" | grep -v "^#" | sort -u
 ```
 
 Exclude false positives: markdown headings at line start (`^#`), code blocks, URLs.
@@ -65,7 +65,7 @@ Deduplicate the full collected set.
 
 ## Step 4 — Diff against tag-index.md
 
-- **New tags**: found in `Knowledge/wiki/` pages but NOT documented in `tag-index.md`
+- **New tags**: found in `wiki/` pages but NOT documented in `tag-index.md`
 - **Stale candidates**: documented in `tag-index.md` but found in ZERO wiki pages
   (flag only — never auto-remove; they may be used in other vault files)
 
@@ -101,10 +101,10 @@ Present the stale list and ask:
 - `"Review one by one"` — step through each with keep/remove choice
 - `"Keep all (ignore)"` — leave index unchanged for these
 
-Note: stale means zero uses in `Knowledge/wiki/` only. The tag may be used elsewhere
+Note: stale means zero uses in `wiki/` only. The tag may be used elsewhere
 in the vault (tasks, project files). Confirm zero vault-wide use before suggesting removal:
 ```bash
-grep -r "#tagname" "${VAULT}" --include="*.md" | grep -v "Knowledge/wiki/" | wc -l
+grep -r "#tagname" "${VAULT}" --include="*.md" | grep -v "wiki/" | wc -l
 ```
 If vault-wide count > 0, flag as "used outside wiki — keep?" rather than suggesting removal.
 

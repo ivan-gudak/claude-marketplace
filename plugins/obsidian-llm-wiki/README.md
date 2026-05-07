@@ -3,7 +3,7 @@
 LLM Wiki pattern for an active Obsidian vault, inspired by Andrej Karpathy's approach
 to building a persistent, compounding knowledge base with an LLM. Compiles knowledge
 from meetings, projects, daily notes, and raw sources into a cross-referenced wiki at
-`Knowledge/wiki/`. Supports both **Claude Code** (slash commands) and **GitHub Copilot**
+`wiki/`. Supports both **Claude Code** (slash commands) and **GitHub Copilot**
 (natural language prefixes) as first-class agents.
 
 ---
@@ -59,13 +59,12 @@ obsidian_vault/
 ├── .raw/               ← ad-hoc inbox (wiki may archive processed files here)
 │   └── _processed/     ← auto-created; archived files moved here after ingest
 │       └── YYYY-MM/
-├── Knowledge/
-│   └── wiki/           ← wiki output (only directory wiki writes to)
-│       ├── _index.md
-│       ├── _log.md
-│       ├── _manifest.json
-│       ├── hot.md
-│       └── <topic-pages>.md
+├── wiki/           ← wiki output (only directory wiki writes to)
+│   ├── _index.md
+│   ├── _log.md
+│   ├── _manifest.json
+│   ├── hot.md
+│   └── <topic-pages>.md
 └── .obsidian/
     └── copilot/
         └── tag-index.md   ← approved tag list (wiki reads; /wiki-tags-refresh updates)
@@ -140,7 +139,7 @@ After completing Parts A and B, run `/wiki-init` (Claude Code) or `wiki-init:` (
 This command handles the entire vault integration automatically:
 
 - Creates the `.raw/` inbox
-- Bootstraps `Knowledge/wiki/` with skeleton files (`_index.md`, `_log.md`, `_manifest.json`, `hot.md`)
+- Bootstraps `wiki/` with skeleton files (`_index.md`, `_log.md`, `_manifest.json`, `hot.md`)
 - Copies the wiki schema into `.obsidian/copilot/wiki-schema.md`
 - Merges the wiki block into `CLAUDE.md` and `.github/copilot-instructions.md` idempotently
 
@@ -149,7 +148,7 @@ This command handles the entire vault integration automatically:
 Then commit the vault changes:
 
 ```bash
-git add .raw/.gitkeep Knowledge/wiki/ .obsidian/copilot/wiki-schema.md \
+git add .raw/.gitkeep wiki/ .obsidian/copilot/wiki-schema.md \
         CLAUDE.md .github/copilot-instructions.md
 git commit -m "Add obsidian-llm-wiki integration"
 git push
@@ -202,7 +201,7 @@ Layer 2 — Ad-hoc inbox
   .raw/   ← drop files here for ingest; archived to .raw/_processed/ after
 
 Layer 3 — Wiki output
-  Knowledge/wiki/   ← structured pages, index, log, hot cache
+  wiki/   ← structured pages, index, log, hot cache
 ```
 
 ### Wiki Page Types
@@ -217,13 +216,13 @@ Layer 3 — Wiki output
 
 ### Delta Tracking
 
-`Knowledge/wiki/_manifest.json` records a content hash for every ingested source file.
+`wiki/_manifest.json` records a content hash for every ingested source file.
 `/wiki-scan` hashes each file before ingest and skips unchanged ones — re-running over
 a large directory is fast.
 
 ### Hot Cache
 
-`Knowledge/wiki/hot.md` is a rolling ≤300-word summary of recent wiki activity. It
+`wiki/hot.md` is a rolling ≤300-word summary of recent wiki activity. It
 gives the agent instant context at session start without re-reading hundreds of pages.
 
 - **Claude Code**: auto-read at session start (SessionStart hook), auto-updated at
@@ -260,11 +259,11 @@ Run `/wiki-tags-refresh` (or `wiki-tags-refresh:`) after heavy ingest sessions t
 Wiki operations **never** write to or delete files in:
 `Meetings/`, `Daily/`, `Projects/`, `Customers/`, `People/`, `Clippings/`, `Research/`
 
-The only directory wiki may modify (besides `Knowledge/wiki/`) is `.raw/`, where it
+The only directory wiki may modify (besides `wiki/`) is `.raw/`, where it
 archives processed files to `.raw/_processed/YYYY-MM/`.
 
 Wiki operations do not create tasks, do not touch `Tasks.md`, and do not modify any
-project files outside `Knowledge/wiki/`.
+project files outside `wiki/`.
 
 ---
 

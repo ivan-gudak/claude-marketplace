@@ -2,7 +2,7 @@
 
 LLM Wiki pattern for an active Obsidian vault. Compiles knowledge from meetings,
 projects, daily notes, and raw sources into a persistent, cross-referenced wiki at
-`Knowledge/wiki/`. Supports both Claude Code (slash commands) and GitHub Copilot
+`wiki/`. Supports both Claude Code (slash commands) and GitHub Copilot
 (natural language prefixes). Wiki sessions from both agents accumulate into the same
 wiki — switching between them mid-project is seamless.
 
@@ -67,6 +67,6 @@ log entry and let the user approve it via `/wiki-tags-refresh`.
 
 ## Hot Cache
 
-`Knowledge/wiki/hot.md` is a rolling ≤300-word session-continuity cache. Claude Code
+`wiki/hot.md` is a rolling ≤300-word session-continuity cache. Claude Code
 auto-reads it at session start (SessionStart hook) and auto-updates it at session end
 (Stop hook). Manually refresh with `/wiki-hot` if the cache is stale or missing.

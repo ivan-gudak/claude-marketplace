@@ -3,7 +3,7 @@ name: wiki-save
 description: >
   Save the current conversation or a specific insight as a permanent wiki page.
   Determines the best page type, drafts the page, shows it for approval, then writes
-  it to Knowledge/wiki/ and updates _index.md, _log.md, and hot.md.
+  it to wiki/ and updates _index.md, _log.md, and hot.md.
   Triggers on: wiki-save, save this to the wiki, save this conversation, file this
   insight, add this to the wiki, wiki save, keep this.
 allowed-tools: Read Write Edit Glob Grep Bash
@@ -100,7 +100,7 @@ Only write to disk on explicit **yes**.
 
 ## Step 7 — Write the page
 
-Write to `Knowledge/wiki/<type-folder>/<title>.md`.
+Write to `wiki/<type-folder>/<title>.md`.
 
 ---
 

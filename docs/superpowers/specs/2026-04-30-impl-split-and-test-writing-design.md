@@ -182,7 +182,7 @@ Given a Jira Value Increment key, reads the full Jira hierarchy from pre-exporte
 ### Phase 0 — Load and dispatch
 
 1. Resolve `$VAULT_PATH` (env var → ask if unset → validate existence).
-2. Resolve `<JIRA_KEY>` from `$ARGUMENTS`; validate `$VAULT_PATH/_archive/jira-products/<JIRA_KEY>/` exists. If not: stop with error.
+2. Resolve `<JIRA_KEY>` from `$ARGUMENTS`; validate `$VAULT_PATH/jira-products/<JIRA_KEY>/` exists. If not: stop with error.
 
 ### Phase 1 — Clarification
 
@@ -254,6 +254,7 @@ Standard Phase 5 structure plus:
 ```
 - NEVER call Bitbucket/GitHub REST APIs — PR URLs are identifiers only; all resolution is pure local git
 - NEVER write inside _archive/ — that path is read-only by convention
+- NEVER write inside jira-products/ — that path is read-only by convention
 - NEVER write outside cwd unless user provides explicit absolute path
 - ALWAYS escalate missing repos before proceeding — never silent skip
 - ALWAYS invoke doc-reviewer before Phase 8
@@ -454,7 +455,7 @@ depth:      full | vi-only
 ```
 
 **Process:**
-1. Read `<vault_path>/_archive/jira-products/<jira_key>/<jira_key>-index.md` — parse the work-items table (`| Key | Type | Status | Summary | Role |`).
+1. Read `<vault_path>/jira-products/<jira_key>/<jira_key>-index.md` — parse the work-items table (`| Key | Type | Status | Summary | Role |`).
 2. If `depth: full` — read `<KEY>/<KEY>.md` for every linked item; parse YAML frontmatter; extract Description body; collect PR URLs from `## Pull Requests` section.
 3. If `depth: vi-only` — read only the VI's own `<KEY>.md` plus the index.
 4. Extract capability themes (2–4 short bullets summarizing recurring topics) for use by `code-scanner`.

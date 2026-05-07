@@ -2,3 +2,10 @@
 settings.local.json
 settings-local.json
 .claude/settings.local.json
+
+# AI Containers
+/.ai-containers/
+/.agent-discovery/
+
+# IntelliJ Idea
+.idea/

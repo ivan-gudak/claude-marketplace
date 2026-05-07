@@ -28,7 +28,7 @@ All file paths in this skill are relative to the vault root.
 
 ## Step 2 — Delta check
 
-Read `Knowledge/wiki/_manifest.json` (create it from the schema template if it does not
+Read `wiki/_manifest.json` (create it from the schema template if it does not
 exist yet).
 
 Compute the source file hash:
@@ -78,10 +78,10 @@ If not: read the file directly.
 ## Step 5 — Resolve against existing wiki
 
 Before creating any new page:
-1. Read `Knowledge/wiki/_index.md` to see what already exists.
+1. Read `wiki/_index.md` to see what already exists.
 2. Search for an existing page with a matching or near-matching title:
    ```bash
-   find "Knowledge/wiki" -name "*.md" | grep -i "${CONCEPT}"  # substitute the actual concept name
+   find "wiki" -name "*.md" | grep -i "${CONCEPT}"  # substitute the actual concept name
    ```
 3. If an existing page covers this concept/entity/decision: **update it**, do not create
    a duplicate.
@@ -102,11 +102,11 @@ Apply the frontmatter schema from `wiki-schema` for the correct page type.
 File naming: Title Case with spaces. `MCP Server.md`, not `mcp-server.md`.
 
 Place files in the correct subdirectory:
-- `Knowledge/wiki/concepts/`
-- `Knowledge/wiki/entities/`
-- `Knowledge/wiki/decisions/`
-- `Knowledge/wiki/patterns/`
-- `Knowledge/wiki/sources/` (.raw/ files only)
+- `wiki/concepts/`
+- `wiki/entities/`
+- `wiki/decisions/`
+- `wiki/patterns/`
+- `wiki/sources/` (.raw/ files only)
 
 For the page body:
 - Write in declarative present tense. "X does Y", not "X basically does Y".
@@ -146,7 +146,7 @@ Write or update the entry for the ingested file:
 "<filepath>": {
   "hash": "<md5>",
   "ingested_at": "YYYY-MM-DD",
-  "wiki_pages": ["Knowledge/wiki/concepts/Name.md", ...]
+  "wiki_pages": ["wiki/concepts/Name.md", ...]
 }
 ```
 
@@ -154,7 +154,7 @@ Write or update the entry for the ingested file:
 
 ## Step 10 — Update hot.md
 
-Update `Knowledge/wiki/hot.md` following the format in `wiki-schema`:
+Update `wiki/hot.md` following the format in `wiki-schema`:
 - Set `## Last Updated` to today and one sentence describing this ingest.
 - Add key facts learned to `## Key Recent Facts`.
 - List created/updated pages in `## Recent Changes`.

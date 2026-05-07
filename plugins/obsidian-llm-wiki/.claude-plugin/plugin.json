@@ -1,7 +1,7 @@
 {
   "name": "obsidian-llm-wiki",
   "version": "0.1.0",
-  "description": "LLM Wiki pattern for an active Obsidian vault. Compiles knowledge from meetings, projects, daily notes, and raw sources into a persistent, cross-referenced wiki at Knowledge/wiki/. Supports both Claude Code (slash commands) and GitHub Copilot (natural language prefixes).",
+  "description": "LLM Wiki pattern for an active Obsidian vault. Compiles knowledge from meetings, projects, daily notes, and raw sources into a persistent, cross-referenced wiki at wiki/. Supports both Claude Code (slash commands) and GitHub Copilot (natural language prefixes).",
   "author": {
     "name": "Ivan Gudak",
     "email": "ivan.gudak@dynatrace.com"

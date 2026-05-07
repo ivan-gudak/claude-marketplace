@@ -29,18 +29,18 @@ Vault path: `~/obsidian_vault` by default; set `VAULT_PATH` to override. WSL use
 
 First verify the wiki directory exists:
 ```bash
-[ -d "Knowledge/wiki" ] || { echo "Wiki not initialised — run /wiki-ingest to create the first page."; exit 0; }
+[ -d "wiki" ] || { echo "Wiki not initialised — run /wiki-ingest to create the first page."; exit 0; }
 ```
 
 ```bash
-find "Knowledge/wiki" -name "*.md" \
+find "wiki" -name "*.md" \
   -not -name "_index.md" \
   -not -name "_log.md" \
   -not -name "hot.md"
 ```
 
-Also read `Knowledge/wiki/_index.md` for the catalog (skip if absent) and
-`Knowledge/wiki/_manifest.json` for ingest history (skip if absent).
+Also read `wiki/_index.md` for the catalog (skip if absent) and
+`wiki/_manifest.json` for ingest history (skip if absent).
 
 ---
 
@@ -91,7 +91,7 @@ Severity: **high** — unresolved contradictions mean the wiki has conflicting f
 
 ### Check 5 — Index gaps
 
-For every `.md` file found in `Knowledge/wiki/concepts/`, `entities/`, `decisions/`,
+For every `.md` file found in `wiki/concepts/`, `entities/`, `decisions/`,
 `patterns/`, and `sources/`: check that it appears as a row in `_index.md`.
 
 Pages present on disk but absent from the index are invisible to `wiki-query` Path B.
@@ -120,7 +120,7 @@ improve the graph.
 
 ## Step 4 — Write the lint report
 
-Create `Knowledge/wiki/lint-report-YYYY-MM-DD.md`:
+Create `wiki/lint-report-YYYY-MM-DD.md`:
 
 ```markdown
 ---
@@ -158,12 +158,12 @@ wiki-status: stable
 - [[concepts/MCP Server]]: contains `> [!warning]` contradiction callout. Needs review.
 
 ## Check 5 — Index Gaps [severity: high]
-- `Knowledge/wiki/concepts/New Concept.md`: not listed in _index.md.
+- `wiki/concepts/New Concept.md`: not listed in _index.md.
   Suggested fix: add index row (safe to auto-fix).
 
 ## Check 6 — Missing Concept Pages [severity: medium]
 - "gRPC": referenced as [[gRPC]] in 4 pages but no concept page exists.
-  Suggested fix: create `Knowledge/wiki/concepts/gRPC.md` with wiki-status: seed.
+  Suggested fix: create `wiki/concepts/gRPC.md` with wiki-status: seed.
 
 ## Check 7 — Unlinked Entities [severity: low]
 - "John Brown" appears as plain text in [[concepts/MCP Server]] — not wikilinked.

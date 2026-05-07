@@ -42,7 +42,7 @@ If a directory argument was given, scan only that directory tree.
 
 ## Step 2 — Read _manifest.json
 
-Read `Knowledge/wiki/_manifest.json`. If it does not exist, treat all files as new.
+Read `wiki/_manifest.json`. If it does not exist, treat all files as new.
 
 ---
 

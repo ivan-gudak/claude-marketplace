@@ -27,7 +27,7 @@ Vault path: `~/obsidian_vault` by default; set `VAULT_PATH` to override. WSL use
 
 ## Step 2 — Load recent context
 
-Read `Knowledge/wiki/hot.md` if it exists. If the file is absent or empty, skip silently.
+Read `wiki/hot.md` if it exists. If the file is absent or empty, skip silently.
 If it contains a directly relevant answer or strong context clues, use that to guide which
 pages to read.
 
@@ -68,7 +68,7 @@ If the `wiki` collection is listed in the status output, use Path A. Otherwise u
 
 ### Path B — Index-guided reading (Copilot, or qmd not configured)
 
-1. Read `Knowledge/wiki/_index.md` fully.
+1. Read `wiki/_index.md` fully.
 2. Scan the index summary column for entries relevant to the question.
 3. Read up to 5 most relevant pages. Prioritise by: direct title match, then tag match,
    then summary match.
@@ -114,7 +114,7 @@ If the user says yes, follow the `wiki-save` skill workflow.
 For enhanced semantic search, register the wiki collection once:
 
 ```bash
-qmd collection add Knowledge/wiki --name wiki
+qmd collection add wiki --name wiki
 qmd collection add Meetings --name meetings
 qmd embed
 ```
