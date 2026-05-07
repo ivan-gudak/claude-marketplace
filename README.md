@@ -17,7 +17,7 @@ Ivan Gudak's private Claude Code plugin marketplace.
 ### 1. Add this marketplace to Claude Code (once)
 
 ```bash
-claude plugin marketplace add ihudak/ihudak-claude-plugins
+claude plugin marketplace add ivan-gudak/ihudak-claude-plugins
 ```
 
 ### 2. Install plugins
