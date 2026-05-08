@@ -1,5 +1,6 @@
 {
   "name": "engineering-practices",
+  "version": "1.0.0",
   "description": "Engineering practice skills: TDD, architecture improvement, disciplined debugging, and design grilling (with and without domain docs)",
   "author": {
     "name": "Ivan Gudak",

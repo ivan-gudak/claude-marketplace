@@ -9,6 +9,7 @@
   "plugins": [
     {
       "name": "dev-workflows",
+      "version": "1.0.0",
       "description": "Three slash commands (/impl, /vuln, /upgrade) with Opus-backed planning, code review, and security-remediation workflows. Includes five reusable subagents (risk-planner, code-review, test-baseline, review-fixer, impl-maintenance) and three notification hooks.",
       "author": {
         "name": "Ivan Gudak",
@@ -20,6 +21,7 @@
     },
     {
       "name": "engineering-practices",
+      "version": "1.0.0",
       "description": "Five engineering-practice skills: TDD red-green-refactor, architecture deepening, disciplined debugging, and design-grilling sessions (with and without domain docs).",
       "author": {
         "name": "Ivan Gudak",
@@ -31,6 +33,7 @@
     },
     {
       "name": "productivity",
+      "version": "1.0.0",
       "description": "Two productivity skills: caveman ultra-compressed communication mode (~75% token reduction), and write-a-skill for authoring new Claude Code skills.",
       "author": {
         "name": "Ivan Gudak",
@@ -42,6 +45,7 @@
     },
     {
       "name": "planning",
+      "version": "1.0.0",
       "description": "Two pre-implementation planning skills: discovery-interview turns vague ideas into detailed specs, premortem identifies failure modes using the Tiger/Paper Tiger/Elephant risk framework.",
       "author": {
         "name": "Ivan Gudak",
@@ -53,6 +57,7 @@
     },
     {
       "name": "obsidian-llm-wiki",
+      "version": "0.1.0",
       "description": "LLM Wiki pattern for an active Obsidian vault. Eight slash commands (/wiki-init, /wiki-ingest, /wiki-scan, /wiki-query, /wiki-save, /wiki-lint, /wiki-hot, /wiki-tags-refresh) compile knowledge from meetings, projects, daily notes, and raw sources into a persistent, cross-referenced wiki at wiki/. Supports Claude Code and GitHub Copilot as first-class agents with session-continuity hooks.",
       "author": {
         "name": "Ivan Gudak",

@@ -1,5 +1,6 @@
 {
   "name": "planning",
+  "version": "1.0.0",
   "description": "Pre-implementation planning skills: deep product discovery interviews and pre-mortem risk analysis",
   "author": {
     "name": "Ivan Gudak",
