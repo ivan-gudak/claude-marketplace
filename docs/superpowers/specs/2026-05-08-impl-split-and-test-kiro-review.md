@@ -14,7 +14,7 @@
 | **Spec section(s)** | The section(s) of the design spec that must be edited |
 | **Resolution** | One-liner describing what was actually changed (filled when `Fixed`) |
 
-**Progress:** 29 / 29 fixed · 4 critical · 9 major · 10 minor · 6 nits
+**Progress:** 29 / 29 fixed · 4 critical · 9 major · 10 minor · 6 nits · 2 post-review amendments (A1 + wave-5 feedback)
 
 ---
 
@@ -36,11 +36,16 @@ These design choices were agreed before applying fixes. Each fix below must hono
 | Q9 | `<KEY>-comments.md` / `attachments/` | Ignore by default; no user-facing toggle. |
 | Q10 | GitHub PR support via `gh` | Add `gh`-based resolution for `github.com` URLs as a second code path in `code-diff-summarizer`. Bitbucket stays pure-local-git. |
 | Q10b | GitHub repo layout | GitHub repos also expected under `/repos/<name>`; same escalation rules if missing. |
+| Q11 | Cloud-without-CLI behaviour | Graceful fallback to local-git strategies (branch search, merge-commit grep) — keeps the command useful even when no CLI is installed. |
+| Q12 | Bitbucket Cloud CLI | **Deferred.** Atlassian's official `acli` does not support Bitbucket at time of writing (verified against ACLI v1.3.15). Bitbucket Cloud URLs use local-git strategies for now. Third-party CLIs (Appfire BCCLI, community `bkt`) are noted as future options but not adopted in this iteration. |
+| Q12' | Bitbucket Cloud CLI plan | Defer — note as a future enhancement; add when an official or de-facto-standard CLI stabilises. |
+| Q13 | Self-hosted Bitbucket host matching | Hostname contains substring `bitbucket` AND is not `bitbucket.org`. No hardcoded hostname in the plugin. |
 
 ### Environment prerequisites to document in the design spec
 
-- **`gh auth login`** must be run once on the host before `/impl:jira:docs` or `/impl:jira:epics` will resolve GitHub PRs.
-- **Recommended environment:** AI Container (<https://github.com/ihudak/ai-containers>) — mounts `/repos`, installs `gh` automatically, and mounts `~/.config/gh` from the host so `gh` authentication carries over transparently.
+- **`gh auth login`** must be run once on the host before `/impl:jira:docs` or `/impl:jira:epics` will resolve GitHub PRs (graceful fallback to local-git strategies if absent).
+- **No Bitbucket CLI is required or assumed** — both Bitbucket Cloud and self-hosted Bitbucket Server URLs are resolved purely from the local clone.
+- **Recommended environment: AI Container** (<https://github.com/ihudak/ai-containers>) — mounts `/repos`, installs `gh` automatically, and mounts `~/.config/gh` from the host so `gh` authentication carries over transparently.
 
 ---
 
@@ -472,6 +477,83 @@ PR URL hostname is hardcoded as `bitbucket.lab.dynatrace.org`. Section 17 defers
 No mention of how to handle `<KEY>` values that are not valid directory names (unlikely with Jira keys but worth a belt-and-braces validator).
 
 **Fix:** Add a validation step in `jira-reader` Phase 0: `<JIRA_KEY>` must match `^[A-Z][A-Z0-9_]*-\d+$`. On mismatch, escalate with `choices: ["Re-enter key", "Cancel"]`.
+
+---
+
+## Post-review amendments
+
+### A1. Remove Dynatrace-specific Bitbucket host; generalise to host categories
+
+- **Status:** Fixed (2026-05-08)
+- **Raised by:** User, after wave 3 review — open-source plugin must not embed an internal URL.
+- **Spec section(s):** 6 Phase 4, 6 Invariants, 12 (URL formats + output schema), 13 (inputs + Resolver selection + local-git strategies + GitHub resolver), 17 (out-of-scope + prerequisites)
+- **Decisions:** Q11 (fallback = local-git), Q12' (defer Bitbucket Cloud CLI), Q13 (hostname contains `bitbucket` AND is not `bitbucket.org`).
+- **Resolution:** All 7 occurrences of `bitbucket.lab.dynatrace.org` removed from the design spec. Introduced a three-category host classification — `github_cloud`, `bitbucket_cloud`, `bitbucket_server` (opaque hostname match). Resolver selection now follows the unified rule "if cloud AND CLI available → use CLI; else → local-git fallback". GitHub continues to use `gh`; Bitbucket Cloud has no CLI adopted this iteration (verified against Atlassian ACLI v1.3.15 — `acli` does not yet cover Bitbucket), so Bitbucket Cloud falls back to local-git strategies alongside self-hosted Bitbucket Server. §17 documents the deferral and leaves a clean extension point for a future Bitbucket CLI. The §6 invariant and §17 out-of-scope list both rephrased to drop any specific Bitbucket domain.
+
+---
+
+## Wave 5 — Ivan's feedback round (2026-05-10)
+
+**Source:** `$VAULT_PATH/Projects/AI-First/AI Containers/Prompts/20260510 Claude impl-split Ivan feedback.md`
+
+**Status:** Applied (2026-05-10). Spec updated across §§2, 3, 6, 7, 9, 9b, 10, 10a, 10b, 10c, 11, 13, 15, 17.
+
+### Decisions resolved (wave 5)
+
+| # | Question | Choice |
+|---|---|---|
+| Q14 | `/impl:jira:docs` docs-repo requirement | Heuristic detection (package.json scripts, `.docstack/`, `mkdocs.yml`, `docusaurus.config.js`, `antora.yml`, `.vale.ini`, `DOCUMENTATION-GUIDELINES.md`, `_snippets/`); if 0 signals, confirm with user (default = Cancel). Not a hard quit. |
+| Q15 | Fetch main + read CONTRIBUTION for branch name | Yes. Phase 6.5 updated: `git fetch origin` → `git switch <base> && git pull --ff-only`, then grep `CONTRIBUTING.md` / `CONTRIBUTION.md` / `README.md` / `DOCUMENTATION-GUIDELINES.md` for naming convention; fall back to `docs/<jira-key>-<slug>`; always confirm. |
+| Q16 | `doc-location-finder` subagent | Add. Name `doc-location-finder` (clearer than "placeholder finder"). §10a defines it — heuristic + grep, session model. |
+| Q17 | `doc-planner` subagent | Add. §10b. Synthesises Jira + diffs + confirmed locations into a checklist (topics × locations × frontmatter × snippets × screenshots × cross-links). Invoked after `doc-location-finder` in new Phase 5.7. |
+| Q18 | Split `doc-reviewer` into `doc-reviewer` + `epic-reviewer` | Yes. Both Opus. §9 rewritten product-docs-only; §9b added for Epic-specific dimensions (acceptance-criteria testability, non-duplication with existing Epics). |
+| Q19 | Split `doc-fixer` | **No.** Finding schema is identical across reviewers; fixer stays single and shared. §10 updated to explicitly note shared use. |
+| Q20 | YAML frontmatter (`changelog:`) handling | Mandatory. Phase 6 preserves existing frontmatter on extended pages; adds/updates `changelog:` per `doc-planner` instructions; updates other fields the planner flags. Reviewer checks. |
+| Q21 | Screenshot prompt | Phase 1 asks; user may provide any absolute path (not vault-only). Phase 6 copies screenshots into the docs repo's idiomatic image location adjacent to the target page. |
+| Q22 | `/impl:jira:epics` vault-only | Yes. Phase 0 refuses to run outside `$VAULT_PATH`. §11 rewritten as a two-policy section. |
+| Q23 | `/impl:jira:epics` output directory | `$VAULT_PATH/jira-drafts/<VI-KEY>/<slug>.md` (sibling to `jira-products/`, not inside it — `jira-products/` is re-created on every import, so writes there would be lost). Option (b) from the proposal; option (a) "carve out jira-products/ writes" was rejected because it would conflict with the import model. |
+| Q24 | `/impl:jira:epics` branching | Never. Phase 6.5 deleted entirely from §7. |
+| Q25 | `docs-style-checker` mechanism | **Wrap Vale / project lint**, not a style-guide URL crawler. §10c detects `.vale.ini` → runs `vale --output=JSON`; else tries `yarn *:lint`, else `markdownlint`/`remark`; else reports `NOT_CONFIGURED`. §17 out-of-scope now explicitly excludes URL crawling of the style guide. |
+| Q26 | `doc-branch-creator` as a subagent | **No.** Inline step in `/impl:jira:docs` Phase 6.5 (~30 lines of logic). Promote later if scope grows. |
+| Q27 | Strategy 4 — Jira-key commit grep | Broaden. Accept full VI hierarchy (`jira_keys_hierarchy` input); grep each key across all commits; emit per-commit entries with `resolved_via: jira_key_commits` and a summary note that the diff may not match the original PR exactly. Existing `resolved_via: issue_grep` enum value renamed to `jira_key_commits`. |
+| Q28 | Aggregate unresolved-PRs gate | Add. §15 now has a separate row for "All PRs across all repos unresolved" → single aggregate prompt `["Proceed with Jira-only content (Recommended)", "Review candidates one by one", "Cancel"]`. |
+| Q29 | Role clarification between the two Jira commands | Add a 1-sentence note in §2 distinguishing tech-writer role (`/impl:jira:docs`) from PM/PO role (`/impl:jira:epics`). |
+
+### Grounding (verified against `/repos/dynatrace-docs` on 2026-05-10)
+
+Real-world signals confirmed before applying:
+- **yarn + nx build** — `package.json` contains `dynatrace:build`, `managed:build`, `*:lint`, `*:start`. Confirms the docs-repo detection signal set.
+- **Vale config present** — `.vale.ini` with `BasedOnStyles = Dynatrace, Microsoft`; `.vale/styles/` directory exists. Confirms Q25 choice to wrap Vale rather than re-crawl the style guide.
+- **Snippets convention** — `dynatrace/_snippets/`, `managed/_snippets/`, `.docstack/sources/*/_snippets/`. Confirms the `doc-planner` snippets-reuse output shape.
+- **YAML frontmatter with `changelog:`** — verified in `managed/_content/dynatrace-intelligence/anomaly-detection/index.md` (incl. `postid`, `legacyids`, `title`, `description`, `published`, `meta`, `changelog`, `readtime`, `tags`, `owners`, `userintention`, `order`). Confirms Q20's frontmatter handling scope.
+- **CONTRIBUTION.md branch-name guidance** — confirmed at lines 50–55 with explicit patterns `<your-name-or-initials>/<JIRA-ISSUE-KEY>-<short-branch-name>` and `<…>/noissue-<short-branch-name>`. Confirms Q15's read-CONTRIBUTION approach.
+- **DOCUMENTATION-GUIDELINES.md** (22 KB) — exists as an additional in-repo style source; `docs-style-checker` can use it as a signal for docs-repo detection.
+- **Vault path layout** — `$VAULT_PATH=/obsidian` with `.obsidian/` at root, `jira-products/` containing `PRODUCT-14902/` and `export-index.md`. Confirms `/impl:jira:epics` vault-only enforcement is feasible.
+
+### Amendments applied to the spec
+
+| Section | Change |
+|---|---|
+| §2 | Added 1-sentence role clarification (Q29) |
+| §3 | Agent listing grew from 6 to 9 new agents: `test-writer`, `doc-reviewer`, `epic-reviewer`, `doc-fixer`, `doc-planner`, `doc-location-finder`, `docs-style-checker`, `jira-reader`, `code-diff-summarizer`, `code-scanner` |
+| §6 | Phase 0 gained docs-repo detection (Q14); Phase 1 gained screenshot prompt (Q21); new Phase 5.5 invokes `doc-location-finder` (Q16); new Phase 5.7 invokes `doc-planner` (Q17); Phase 6 rewritten with frontmatter/snippet/screenshot handling (Q20, Q21); Phase 6.5 enhanced with fetch-main + CONTRIBUTION parsing (Q15); new Phase 6.7 invokes `docs-style-checker` (Q25); Phase 7 product-docs-specific (Q18); invariants updated |
+| §7 | Phase 0 vault-required (Q22); Phase 1 default output `jira-drafts/<VI-KEY>/<slug>.md` with rationale (Q23); Phase 6.5 deleted (Q24); Phase 7 uses `epic-reviewer` (Q18); invariants rewritten |
+| §9 | Rewritten as product-docs-only reviewer (Q18) |
+| §9b | New agent: `epic-reviewer` Opus, Epic-specific dimensions (Q18) |
+| §10 | `doc-fixer` clarified as shared across workflows (Q19) |
+| §10a | New agent: `doc-location-finder` (Q16) |
+| §10b | New agent: `doc-planner` (Q17) |
+| §10c | New agent: `docs-style-checker` (Q25) |
+| §11 | Rewritten as two-policy section: `/impl:jira:epics` vault-only no-branch (Q22, Q24); `/impl:jira:docs` uses docs-repo detection (Q14) |
+| §13 | Strategy 4 broadened to cross-hierarchy Jira-key grep (Q27); `resolved_via` enum: `issue_grep` → `jira_key_commits`; `jira_keys_hierarchy` input added |
+| §15 | Aggregate all-PRs-unresolved row added (Q28) |
+| §17 | Out-of-scope excludes style-guide URL crawling (Q25), running `/impl:jira:docs` outside docs repo (Q14), running `/impl:jira:epics` outside vault (Q22). Prerequisites note `vale` as optional/recommended |
+
+### Open items for implementation time (not blocking)
+
+- `doc-planner` output schema includes `frontmatter_updates.other`; the exact fields to check are best read from 2–3 adjacent pages at invocation time (per the §10b process step "detect existing conventions by sampling 2–3 adjacent pages"). No hardcoded field list in the spec — intentionally.
+- `docs-style-checker` fallback chain (vale → yarn:lint → markdownlint/remark) may need extension if other docs-repo conventions surface during implementation. The spec's priority order is additive-safe.
+- `doc-location-finder` scoring is heuristic; if the initial implementation consistently returns low confidence, consider a small embedding-based match as a follow-up — not in this iteration.
 
 ---
 

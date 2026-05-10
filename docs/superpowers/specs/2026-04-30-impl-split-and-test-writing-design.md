@@ -33,6 +33,8 @@ Additionally, a third workflow is needed: Jira-driven documentation and Epic wri
 
 **Why `/impl:jira:docs` and `/impl:jira:epics` are separate from `/impl:docs`:** The Jira-driven workflows involve multi-repo parallel analysis, structured handoff schemas between agents, and Jira hierarchy traversal. Merging into `/impl:docs` would force it to carry conditional bloat for an unrelated workflow.
 
+**Role clarification — `/impl:jira:docs` vs `/impl:jira:epics`:** these two commands serve different roles. `/impl:jira:docs` is a **technical-writer** workflow — it produces product documentation for features that have already been implemented, grounded in Jira items and PR diffs. `/impl:jira:epics` is a **product-manager / product-owner / engineering-lead** workflow — it produces Epic drafts for features that are being scoped for implementation. They share some infrastructure (jira-reader, the vault layout) but their outputs, audiences, invariants, and execution contexts diverge substantially.
+
 ---
 
 ## 3. Architecture
@@ -56,8 +58,12 @@ Namespaced slash commands are loaded via **directory convention** (`commands/<pa
 ```
 plugins/dev-workflows/agents/
   test-writer.md          ← writes tests for new/changed code behavior
-  doc-reviewer.md         ← reviews docs for correctness, completeness, audience fit
-  doc-fixer.md            ← fixes BLOCKER/MAJOR doc review findings
+  doc-reviewer.md         ← reviews product documentation (Opus gate)
+  epic-reviewer.md        ← reviews Epic drafts (Opus gate)
+  doc-fixer.md            ← fixes BLOCKER/MAJOR findings from either reviewer
+  doc-planner.md          ← synthesises Jira + diffs into a documentation checklist
+  doc-location-finder.md  ← finds existing/new target paths in a docs repo
+  docs-style-checker.md   ← runs Vale / project lint; emits violations for doc-fixer
   jira-reader.md          ← reads Jira markdown hierarchy from vault
   code-diff-summarizer.md ← summarizes PR diffs per repo (parallel, use case A)
   code-scanner.md         ← scans code for reuse/gaps (parallel, use case B)
@@ -248,6 +254,17 @@ Given a Jira Value Increment key, reads the full Jira hierarchy from pre-exporte
 
 1. Resolve `$VAULT_PATH` (env var → ask if unset → validate existence).
 2. Resolve `<JIRA_KEY>` from `$ARGUMENTS`; validate `$VAULT_PATH/jira-products/<JIRA_KEY>/` exists. If not: stop with error.
+3. **Docs-repo detection.** This command writes feature documentation into a product docs repository; running it outside such a repository is almost always a mistake. Detect signals in cwd's git root:
+   - `package.json` with any script matching `*:start`, `*:build`, `*:lint`, `docs:*` (common in Docusaurus/Nx/Docstack repos), **or**
+   - any of `.docstack/`, `mkdocs.yml`, `docusaurus.config.js`, `antora.yml`, `.vale.ini`, `DOCUMENTATION-GUIDELINES.md`, **or**
+   - a `_snippets/` directory at any level under the repo root.
+
+   If ≥1 signal is present → proceed silently.
+   If 0 signals are present → confirm with the user:
+   ```
+   choices: ["Proceed — I confirm this is a docs repo", "Cancel — switch to a docs repo first"]
+   ```
+   Default = Cancel. The prompt must list the signals that were checked and not found, so the user can decide against an informed picture.
 
 ### Phase 1 — Clarification
 
@@ -261,6 +278,11 @@ Ask (grouped where possible, `choices` arrays, last choice always `"Other… (de
   choices: ["Use /repos (Recommended)", "Use a different path (you'll be prompted)", "Cancel"]
   ```
   If "different path", follow up with a free-text entry and validate that at least one directory exists under it.
+- **Screenshots** — ask:
+  ```
+  choices: ["No screenshots needed", "I'll provide screenshot paths (you'll be prompted)", "Cancel"]
+  ```
+  If "provide paths", follow up with a free-text entry accepting any absolute filesystem path (vault, `/tmp`, home, the docs repo itself — the writer will copy them into the docs repo's idiomatic image location at Phase 6, alongside the target markdown page). Accept multiple paths (one per line or space-separated). Validate each exists and is an image by extension (`.png|.jpg|.jpeg|.gif|.svg|.webp`).
 
 Also detect and show: resolved cwd absolute path, write context (obsidian / git_repo / plain_dir — see Section 11), whether branching will happen, and the resolved `<repos_base>`.
 
@@ -279,9 +301,11 @@ Invoke `jira-reader` agent (Section 12) with `depth: full`. Wait for handoff.
 ### Phase 4 — Resolve repos
 
 From the `jira-reader` handoff `pull_requests` list:
-1. Parse each PR URL. Two hosts are supported (per §13 resolver selection):
-   - `https://bitbucket.lab.dynatrace.org/projects/<PROJECT>/repos/<REPO>/pull-requests/<PR_ID>` → extract `<REPO>`.
-   - `https://github.com/<OWNER>/<REPO>/pull/<PR_ID>` → extract `<REPO>` (and `<OWNER>` for `gh` use).
+1. Parse each PR URL. Three host categories are recognised (see §13 resolver selection):
+   - **Cloud GitHub** — hostname `github.com`, URL shape `https://github.com/<OWNER>/<REPO>/pull/<PR_ID>` → extract `<REPO>` (and `<OWNER>` for `gh` use).
+   - **Cloud Bitbucket** — hostname `bitbucket.org`, URL shape `https://bitbucket.org/<WORKSPACE>/<REPO>/pull-requests/<PR_ID>` → extract `<REPO>`.
+   - **Self-hosted Bitbucket Server** — hostname contains the substring `bitbucket` and is not `bitbucket.org`, URL shape `https://<host>/projects/<PROJECT>/repos/<REPO>/pull-requests/<PR_ID>` → extract `<REPO>`. The `<host>` is opaque to the resolver; it is only used for host classification.
+   Any other host is recorded as `unresolved` with reason `unsupported host`.
 2. Filter by `status_marker` per Phase 1 setting (default: MERGED only).
 3. For each unique repo, check `<repos_base>/<REPO>` exists using the path resolved at Phase 1.
 4. If any repos missing, escalate using the rules in Section 15 (choices include "Skip and continue without its PRs", "I'll clone it — wait", "Cancel", and "Re-resolve with a different `<repos_base>`"). List missing repos explicitly.
@@ -294,19 +318,74 @@ Rationale: Claude Code's practical parallel-subagent limit is ~4–5; going abov
 
 Handle `status: REPO_MISSING`, `DIRTY_TREE`, `REFRESH_BLOCKED`, `NO_PRS_RESOLVED`, or `PARTIAL` per Section 13 escalation rules.
 
+### Phase 5.5 — Find documentation locations
+
+Invoke `doc-location-finder` agent (see agent spec) with the docs-repo root, the feature summary (from `jira-reader` themes + VI goal), and the per-repo diff summaries (for naming hints from the changed code areas).
+
+Expected output: a list of recommended write targets, each annotated with `kind` (extend-existing | new-page-in-existing-section | new-section), `section` (e.g. "Setup", "How to use", "Reference"), absolute path, and 1-sentence rationale.
+
+Present the recommendations to the user with:
+```
+choices: ["Accept all proposed locations (Recommended)", "Adjust individual locations (you'll be prompted per item)", "Cancel"]
+```
+
+The confirmed list is the authoritative write-target set for Phase 6 and is handed to `doc-planner` in Phase 5.7.
+
+### Phase 5.7 — Plan the documentation
+
+Invoke `doc-planner` agent (see agent spec) with:
+- `jira-reader` handoff
+- per-repo diff summaries
+- confirmed write-target list from Phase 5.5
+- screenshot paths (if any) from Phase 1
+
+Expected output: a `documentation checklist` — topics × locations, per-file YAML frontmatter updates (including `changelog:` entries), snippet reuse/extraction proposals, screenshot placement instructions, and cross-link needs. This checklist is what the Phase 6 writer follows and what `doc-reviewer` checks against in Phase 7.
+
+Present the checklist to the user for approval (`["Approve & write (Recommended)", "Adjust (describe)", "Cancel"]`).
+
 ### Phase 6 — Write documentation
 
-Using `jira-reader` output + diff summaries as source of truth. Every claim must be traceable — cite the originating Jira key (`[[MGD-1127]]`) and PR URL inline. Write to cwd (see Section 11 for branch/write policy).
+The main command (session model) writes the markdown following the `doc-planner` checklist from Phase 5.7. The writer is not a separate subagent — it's the orchestrating command, which has full context from Phases 3–5.7 already loaded.
+
+For each target from the confirmed write-target list:
+- **Preserve any existing YAML frontmatter** on pages being extended. Never strip unknown fields.
+- **Add or update** the `changelog:` field per the planner's checklist (append a new dated entry naming the Jira key and a 1-line change summary). Create the field if it doesn't exist on an extended page.
+- **Update other frontmatter fields** the planner flagged: `published` (creation date on new pages), `meta.generation`, `readtime` (estimate from word count), `tags` (merge — don't duplicate), `owners` (leave to the user to maintain).
+- **Reuse snippets** per the planner's checklist: if a snippet path is proposed, `include` it rather than inlining the content; if the planner recommends extracting new content into a snippet, create the snippet file in the repo's idiomatic `_snippets/` location and reference it from the page.
+- **Place screenshots**: copy each user-provided path into the idiomatic image location for the target page (usually `<page-dir>/img/` or `<page-dir>/images/` — detect from sibling pages). Reference them in markdown with the repo's preferred syntax.
+- **Traceability**: every claim must cite the originating Jira key (`[[JIRA-1127]]`) and/or PR URL inline. If the claim comes only from imported Jira content (no PR was resolved), cite the Jira key alone.
+
+Write to cwd (see Section 11 for branch/write policy).
 
 ### Phase 6.5 — Branch setup (conditional)
 
 Only when write context = `git_repo` AND user confirmed branching at plan approval. Never for `obsidian` or `plain_dir`.
 
-Before creating the branch, run the same **clean-tree check** defined in `commands/impl/code.md` Pre-Phase 3: `git status --porcelain`, and if non-empty present the user with `choices: ["Stash changes and continue (Recommended)", "Proceed anyway — pre-existing changes will appear in the diff", "Cancel"]`. This avoids silently committing unrelated user work alongside the generated documentation. Branch prefix default: `docs/` (see §11).
+1. **Update the base branch.** Determine the base — default `main`; if the user picked a `release/*` branch earlier, use that. Run `git fetch origin` → `git switch <base> && git pull --ff-only`. If the fast-forward pull fails (local commits on base), escalate with `choices: ["Stash local changes and continue (Recommended)", "Proceed from current base state", "Cancel"]`.
+2. **Clean-tree check.** Run `git status --porcelain`; if non-empty, prompt `choices: ["Stash changes and continue (Recommended)", "Proceed anyway — pre-existing changes will appear in the diff", "Cancel"]`. Mirrors `commands/impl/code.md` Pre-Phase 3.
+3. **Derive branch name from repo conventions.** In priority order, look at repo root for `CONTRIBUTING.md`, `CONTRIBUTION.md`, `README.md`, `DOCUMENTATION-GUIDELINES.md`. Grep each for a branch-naming section (case-insensitive, patterns like `Branch name`, `Branch naming`, `naming your branch`). If a pattern like `<user>/<JIRA-KEY>-<slug>` or `<prefix>/<name>` is documented, derive the branch name by filling placeholders with known values (Jira key from Phase 0, slug from the feature summary, `<user>` from `git config user.name` or its initials). If multiple patterns are documented, offer them to the user.
+4. **Confirm the branch name with the user.** Always — even when derived from conventions — because initials and slugs are subjective:
+   ```
+   choices: ["Use proposed name: <name>", "Edit name (you'll be prompted)", "Cancel"]
+   ```
+   Fallback default when no convention is found: `docs/<jira-key>-<slug>`.
+5. **Create the branch.** `git switch -c <name>`.
+
+No external CLI call; all git operations are local.
+
+### Phase 6.7 — Style check (before reviewer)
+
+Invoke `docs-style-checker` agent on the files written in Phase 6. It detects and runs the repo's project-configured prose linter — Vale via `.vale.ini`, or a `yarn <project>:lint` script, or similar — and returns a violations list.
+
+- **No linter configured in the repo** → agent returns `status: NOT_CONFIGURED` with no violations. Move on to Phase 7; the doc-reviewer will still check correctness/completeness.
+- **Linter ran, 0 violations** → proceed to Phase 7.
+- **Violations present** → invoke `doc-fixer` with the violations treated as MAJOR findings. After `doc-fixer` completes, re-run the linter once. If violations remain, surface to user with `choices: ["Proceed to review anyway — reviewer may still PASS", "Show remaining violations and let me fix manually", "Cancel"]`.
+
+The goal is to catch corporate-style issues locally so the doc-reviewer (Opus) spends its attention budget on correctness and completeness, not prose policing, and so the eventual PR doesn't bounce on CI style checks.
 
 ### Phase 7 — Doc review gate
 
-Invoke `doc-reviewer` agent (Section 9). Act on verdict:
+Invoke `doc-reviewer` agent (Section 9). The reviewer is **product-docs-only**; Epic drafts use `epic-reviewer` in `/impl:jira:epics`. Act on verdict:
 - **BLOCK** → invoke `doc-fixer` (BLOCKER findings). Re-invoke `doc-reviewer` once. If still BLOCK: surface to user. Cap: one fix cycle + one re-review.
 - **PASS WITH RECOMMENDATIONS** → invoke `doc-fixer` (MAJOR findings only). MINOR/NIT deferred to Phase 9 report.
 - **PASS** → proceed.
@@ -327,15 +406,17 @@ Standard Phase 5 structure plus:
 ### Invariants
 
 ```
-- NEVER call Bitbucket REST APIs — Bitbucket URLs are identifiers only; all resolution is pure local git
+- ALWAYS run Phase 0 docs-repo detection; if 0 signals, require user confirmation before proceeding
+- NEVER call Bitbucket REST APIs for Cloud or self-hosted Server — Bitbucket URLs are identifiers only; all resolution is pure local git. (No official Atlassian CLI covers Bitbucket at time of writing; adopting a third-party one would be a separate decision.)
 - GitHub URLs may use the `gh` CLI for head/base SHA resolution (see §13 GitHub resolver); no direct REST calls outside `gh`
 - NEVER write inside _archive/ — that path is read-only by convention
-- NEVER write inside jira-products/ — that path is read-only by convention
+- NEVER write inside jira-products/ — that path is re-created from scratch on every Jira import; writes there will be lost
 - NEVER write outside cwd unless user provides explicit absolute path
 - ALWAYS escalate missing repos before proceeding — never silent skip
+- ALWAYS run docs-style-checker (Phase 6.7) before doc-reviewer
 - ALWAYS invoke doc-reviewer before Phase 8
 - Cap review/fix cycles: 1 fix + 1 re-review max
-- All written claims must be traceable to Jira keys or PR diffs
+- All written claims must be traceable to Jira keys or PR diffs; if only Jira is available, cite the Jira key alone
 ```
 
 ---
@@ -350,13 +431,19 @@ Given a Jira Value Increment key, reads the VI and its existing Epics, optionall
 
 ### Phase 0 — Load
 
-Same as `/impl:jira:docs`: resolve `$VAULT_PATH` and `<JIRA_KEY>`.
+1. Resolve `$VAULT_PATH` as in `/impl:jira:docs` Phase 0.1.
+2. **Require vault context.** This command writes Epic drafts into the user's Obsidian vault; running it outside the vault would produce files in the wrong place. Verify cwd is inside `$VAULT_PATH` (cwd starts with the resolved `$VAULT_PATH` prefix, case-sensitive). If not:
+   ```
+   choices: ["Change to <VAULT_PATH> and retry (Recommended)", "Cancel"]
+   ```
+   "Change and retry" emits a `cd "$VAULT_PATH"` instruction for the user and cancels this run — the command cannot `cd` for the user safely across shells. Default = Cancel.
+3. Resolve `<JIRA_KEY>` from `$ARGUMENTS`; validate `$VAULT_PATH/jira-products/<JIRA_KEY>/` exists. If not: stop with error.
 
 ### Phase 1 — Clarification
 
 Ask (grouped where possible, `choices` arrays, last choice always `"Other… (describe)"`):
 
-- Output path under cwd (default: `<VI-KEY>/<NEW-EPIC-SLUG>.md` per Epic).
+- **Output directory** (default: `$VAULT_PATH/jira-drafts/<VI-KEY>/`; one `.md` file per Epic, filename `<NEW-EPIC-SLUG>.md`). This path lives **outside** `jira-products/` by design — `jira-products/` is re-created from scratch on every Jira import, so any Epic drafts written there would be lost. `jira-drafts/` is a sibling directory reserved for PM/PO work-in-progress that survives re-imports. The directory is auto-created if missing.
 - Code examination on/off (default: ON) — if ON, ask which repos under `<repos_base>` to scan (defaults: repos referenced by sibling/parent Epics in the index; otherwise user lists them).
 - Repo refresh policy: `fetch + pull default branch` `(Recommended)` / `fetch only` / `no refresh`.
 - **Repos base path** — detect `/repos` (check existence) and ask:
@@ -365,7 +452,7 @@ Ask (grouped where possible, `choices` arrays, last choice always `"Other… (de
   ```
   If "different path", follow up with a free-text entry and validate that at least one directory exists under it.
 
-Also detect and show: resolved cwd absolute path, write context, whether branching will happen, and the resolved `<repos_base>`.
+Also detect and show: resolved cwd absolute path, resolved output directory, and the resolved `<repos_base>`. No branching context is shown — `/impl:jira:epics` never branches (see Phase 6.5 removal and invariants).
 
 ### Phase 1.5 — Classify
 
@@ -400,15 +487,11 @@ Draft child Epic definitions — one file per Epic:
 - `suggested stories` (high-level breakdown)
 - `references` (Jira links, code paths if code scan was run)
 
-Write to cwd (branch/write policy per Section 11). Show resolved absolute paths at plan approval.
+Write to the resolved output directory from Phase 1 (default `$VAULT_PATH/jira-drafts/<VI-KEY>/`). Create the directory if missing. One file per Epic. Show resolved absolute paths at plan approval.
 
-### Phase 6.5 — Branch setup (conditional)
+### Phase 7 — Epic review gate
 
-Same as `/impl:jira:docs` Phase 6.5 — including the pre-branch clean-tree check from `commands/impl/code.md` Pre-Phase 3 and the `docs/` branch prefix.
-
-### Phase 7 — Doc review gate
-
-Invoke `doc-reviewer` with `doc_type: jira-epic`. Same verdict handling as `/impl:jira:docs`.
+Invoke `epic-reviewer` agent (see agent spec). This reviewer is Epic-specific — it focuses on acceptance-criteria testability, scope clarity, and non-duplication of existing Epics under the VI. Verdict handling is the same as `/impl:jira:docs` Phase 7 (BLOCK / PASS WITH RECOMMENDATIONS / PASS; cap 1 fix + 1 re-review). Fixes go through the shared `doc-fixer` agent.
 
 ### Phase 8 — Maintenance
 
@@ -421,7 +504,22 @@ Standard structure plus:
 - `### Existing Epics (not duplicated)`
 - `### New Epics written`
 - `### Repos scanned`
-- `### Doc review verdict`
+- `### Epic review verdict`
+
+### Invariants
+
+```
+- ALWAYS run Phase 0 vault check — refuse to run outside $VAULT_PATH
+- NEVER create a git branch (this command never branches)
+- NEVER commit (vault git management is the user's responsibility)
+- NEVER write inside jira-products/ — re-created on every import; writes would be lost
+- NEVER write inside _archive/ — read-only by convention
+- ALWAYS write to jira-drafts/<VI-KEY>/ (or the user-confirmed alternative under $VAULT_PATH)
+- ALWAYS escalate missing repos before proceeding
+- ALWAYS invoke epic-reviewer before Phase 8
+- Cap review/fix cycles: 1 fix + 1 re-review max
+- All written claims must be traceable to Jira keys or code paths
+```
 
 ---
 
@@ -461,38 +559,71 @@ Standard structure plus:
 
 ## 9. Agent: `doc-reviewer.md`
 
-**Purpose:** Reviews documentation for correctness, completeness, and fitness for purpose. Returns PASS / PASS WITH RECOMMENDATIONS / BLOCK.
+**Purpose:** Reviews **product documentation** written by `/impl:jira:docs` for correctness, completeness, and fitness for purpose. Returns PASS / PASS WITH RECOMMENDATIONS / BLOCK. Epic drafts are reviewed by `epic-reviewer` (see §9b); this agent is product-docs-only.
 
 **Model:** `opus` (declared in frontmatter). Mirrors the Opus-backed gate role of `code-review` — this agent decides whether to BLOCK the run, so it needs the strongest reasoning model available. Do NOT down-grade to session model.
 
 **Tools:** Read, Glob, Grep, LS
 
-**Inputs:** Written doc file path(s), Jira directory path (for cross-check), diff summaries or code-scanner output, `doc_type: product-docs | jira-epic`.
+**Inputs:** Written doc file path(s), Jira directory path (for cross-check), diff summaries, the `doc-planner` checklist from Phase 5.7 (review against plan), the `docs-style-checker` report from Phase 6.7.
 
 **Review dimensions:**
 
-| Dimension | product-docs | jira-epic |
-|---|---|---|
-| Factual correctness | Matches Jira + code diffs | Matches Jira + code scan |
-| Completeness | All changed behavior covered | All gaps identified; no scope missing |
-| Audience fit | End-user clarity | Engineering handoff clarity |
-| Structural integrity | Headings, links, `[[wikilinks]]` | Headings, links, `[[wikilinks]]` |
-| Actionability | Examples runnable; commands copyable verbatim; links resolve | Acceptance criteria testable; gaps specified |
-| Source traceability | Claims cite Jira keys + PRs | Claims cite Jira keys + code paths |
+| Dimension | Check |
+|---|---|
+| Factual correctness | Matches Jira + code diffs |
+| Completeness vs plan | Every item in the `doc-planner` checklist is addressed; nothing silently skipped |
+| Coverage | "How to use" and "How to configure" sections present when the feature needs them |
+| Audience fit | End-user clarity; technical jargon explained or linked; commands copy-pasteable |
+| Structural integrity | Headings, links, `[[wikilinks]]` resolve; internal nav consistent |
+| YAML frontmatter | `changelog:` updated with the Jira key; other required fields per the repo's convention (e.g., `title`, `description`, `published`, `tags`) present on new pages |
+| Screenshots | Referenced where the planner flagged them; images resolve; alt-text present |
+| Snippets | Reused where the planner proposed reuse; not needlessly inlined; new snippets (if any) follow repo conventions |
+| Actionability | Examples runnable; commands copyable verbatim; links resolve |
+| Source traceability | Claims cite Jira keys + PRs (or Jira keys alone when no PR was resolved) |
+| Style-check follow-through | Any unresolved `docs-style-checker` violations above MINOR are reflected as BLOCKER or MAJOR findings here |
 
 **Verdict:** PASS (no findings above MINOR), PASS WITH RECOMMENDATIONS (MAJOR/MINOR/NIT only), BLOCK (at least one BLOCKER). Same output shape as `code-review.md`.
 
 ---
 
+## 9b. Agent: `epic-reviewer.md`
+
+**Purpose:** Reviews **Epic drafts** written by `/impl:jira:epics` for scope clarity, testability, and non-duplication. Returns PASS / PASS WITH RECOMMENDATIONS / BLOCK. Product documentation is reviewed by `doc-reviewer` (§9); this agent is Epic-specific.
+
+**Model:** `opus` (declared in frontmatter). Same rationale as `doc-reviewer`.
+
+**Tools:** Read, Glob, Grep, LS
+
+**Inputs:** Written Epic markdown file(s), `jira-reader` handoff (incl. existing Epics under the VI), `code-scanner` output.
+
+**Review dimensions:**
+
+| Dimension | Check |
+|---|---|
+| Goal clarity | 1-sentence goal, unambiguous, tied to the parent VI |
+| Business value | 1–2 sentences linking the Epic to the VI's outcome |
+| Scope (in / out) | Clearly delimited; "out of scope" is concrete, not hand-waving |
+| Acceptance criteria | Testable (each criterion has an observable pass/fail signal); not a restatement of the goal |
+| Dependencies | Other Epics / repos / teams named; no unstated external blockers |
+| Suggested stories | High-level breakdown is plausible; no story overlap with existing Epics under the VI |
+| Non-duplication | No overlap with existing Epics linked to the VI (from `jira-reader` output); if overlap exists, it's called out and justified |
+| References | Jira parent link; code paths from `code-scanner` if relevant |
+| Structural integrity | Headings, `[[wikilinks]]` resolve; markdown well-formed |
+
+**Verdict:** PASS / PASS WITH RECOMMENDATIONS / BLOCK. Same output shape as `doc-reviewer` and `code-review`.
+
+---
+
 ## 10. Agent: `doc-fixer.md`
 
-**Purpose:** Applies targeted fixes for BLOCKER and MAJOR doc review findings. Analogous to `review-fixer.md`.
+**Purpose:** Applies targeted fixes for BLOCKER and MAJOR findings produced by either `doc-reviewer` (product docs) or `epic-reviewer` (Epic drafts). Also applies fixes for violations reported by `docs-style-checker`. Analogous to `review-fixer.md`. Shared between `/impl:jira:docs` and `/impl:jira:epics`; the fixer is doc-type-agnostic because the finding schema (file, line, severity, description, suggested fix) is the same across reviewers.
 
 **Model:** inherits session (no `model:` override in frontmatter). Mirrors `review-fixer` — fixes are targeted, no deep reasoning required.
 
 **Tools:** Read, Glob, Grep, LS, Write, Edit
 
-**Inputs:** Doc file path(s), full `doc-reviewer` output, severities to fix.
+**Inputs:** File path(s), full reviewer output (or `docs-style-checker` output), severities to fix.
 
 **Hard rules:**
 - NEVER rewrite whole sections when only a targeted edit is needed.
@@ -501,19 +632,182 @@ Standard structure plus:
 
 ---
 
+## 10a. Agent: `doc-location-finder.md`
+
+**Purpose:** Finds the right place(s) in a docs repository to write new or extended documentation. Returns a prioritised list of write targets with rationale; the main command confirms each with the user in `/impl:jira:docs` Phase 5.5.
+
+**Model:** inherits session (no `model:` override in frontmatter). Heuristic + grep work, no deep reasoning needed.
+
+**Tools:** Read, Glob, Grep, LS
+
+**Inputs:**
+```yaml
+repo_root:         <absolute path to docs repo root>
+feature_summary:   <2–4 sentences from jira-reader themes + VI goal>
+diff_highlights:   <optional: key filenames/areas from code-diff-summarizer outputs to seed topical search>
+```
+
+**Process:**
+1. Detect the docs tree root(s) — likely subdirectories: `dynatrace/`, `managed/`, `docs/`, `content/`, `site/` — whichever contain the majority of `.md` files with frontmatter.
+2. Build a lightweight topical index: for each markdown page, read the frontmatter (`title`, `description`, `tags`) + H1/H2 headings (first 50 lines).
+3. Score candidates by keyword overlap with `feature_summary` and `diff_highlights`.
+4. Distinguish three placement kinds:
+   - **extend-existing** — the feature naturally belongs in an existing page; add a section or edit content.
+   - **new-page-in-existing-section** — the topic is new but its section/folder exists (e.g., a new "how-to" under `…/configure/`).
+   - **new-section** — no adjacent content; a new folder + index page is justified.
+5. If the feature has multiple natural homes (e.g., a Settings reference + a How-to page), propose multiple targets — each with its own kind and rationale.
+
+**Output:**
+```yaml
+status: OK | LOW_CONFIDENCE | EMPTY
+targets:
+  - kind:      extend-existing | new-page-in-existing-section | new-section
+    section:   <human-readable label, e.g. "Setup and configuration">
+    path:      <absolute path; for extend-existing this is the existing file, for new-* this is the proposed new file>
+    rationale: <1 sentence: why this location>
+    linked_from: [<paths of pages that should cross-link to this, if any>]
+confidence_notes: <when status == LOW_CONFIDENCE: what's ambiguous>
+```
+
+If multiple targets are returned, the caller prompts the user to accept all, or adjust individually.
+
+---
+
+## 10b. Agent: `doc-planner.md`
+
+**Purpose:** Synthesises Jira data, diff summaries, and confirmed write targets into a documentation checklist that the writer follows and the reviewer checks against. Does NOT write content.
+
+**Model:** inherits session (no `model:` override in frontmatter).
+
+**Tools:** Read, Glob, Grep, LS
+
+**Inputs:**
+```yaml
+jira_reader_handoff:    <full YAML from jira-reader>
+diff_summaries:         <array of code-diff-summarizer outputs>
+write_targets:          <confirmed list from doc-location-finder + user>
+screenshots:            [<array of user-provided image paths, possibly empty>]
+repo_root:              <absolute path>
+```
+
+**Process:**
+1. For each write target, decide:
+   - What topics the page must cover (how-to-use, how-to-configure, reference, migration/upgrade notes, what's new).
+   - Which `jira-reader` items and which diff summaries source each topic.
+   - What YAML frontmatter updates are needed (new page vs. extended page; `changelog:` entry with the Jira key; `published`, `tags`, `readtime`, `meta.generation` when relevant — detect existing conventions by sampling 2–3 adjacent pages).
+   - Whether existing snippets apply (grep `_snippets/` for topical matches); whether new content should be extracted into a snippet for reuse.
+   - Whether any provided screenshot belongs on this page; where to place it (typically `<page-dir>/img/` or `<page-dir>/images/`).
+   - Which cross-links should point to/from this page (including internal nav / sidebar files if the repo uses them).
+2. Flag gaps the writer cannot fill from inputs alone (e.g., "feature requires a DB-migration note but no migration steps were found in Jira or diffs — user input needed").
+
+**Output — the documentation checklist:**
+```yaml
+status:   OK | PARTIAL
+checklist:
+  - target_path: <absolute path>
+    kind:        extend-existing | new-page-in-existing-section | new-section
+    topics:
+      - name:    <"How to use" | "Setup" | "Reference" | "Migration" | etc.>
+        sources: [<Jira key | PR URL>, ...]
+        notes:   <optional 1-line guidance for the writer>
+    frontmatter_updates:
+      changelog: {action: append, entry: "<YYYY-MM-DD> <1-line summary, ref <JIRA_KEY>>"}
+      other:     {<field>: <value>, ...}   # only fields needing change
+    snippets:
+      reuse:   [<relative snippet path>]
+      extract: [<description of content to extract + proposed snippet path>]
+    screenshots:
+      - src:   <user-provided absolute path>
+        dest:  <path under <page-dir>/img/>
+        alt:   <proposed alt-text>
+    cross_links:
+      from:  [<page paths that should link here>]
+      to:    [<page paths this should link out to>]
+gaps:
+  - description: <what's missing from inputs>
+    recommended_action: <"ask user" | "mark TODO in draft" | "skip with note in final report">
+```
+
+---
+
+## 10c. Agent: `docs-style-checker.md`
+
+**Purpose:** Runs the docs repo's project-configured prose linter on the files written by the main command, and returns violations in the same finding schema used by `doc-reviewer` / `doc-fixer`. Detects tooling from the repo; does not embed any specific style guide.
+
+**Model:** inherits session (no `model:` override in frontmatter).
+
+**Tools:** Read, Glob, Grep, LS, Bash
+
+**Rationale:** Corporate style guides (Dynatrace, Microsoft, Google, etc.) are encoded as Vale style packages maintained by the docs team, not by this plugin. The docs repo references them via `.vale.ini` (`BasedOnStyles = …`). Re-encoding or crawling the corporate style-guide site would duplicate the canonical source and drift. Wrapping the repo's existing tooling guarantees the local check matches what CI will run on the PR.
+
+**Inputs:**
+```yaml
+repo_root: <absolute path>
+files:     [<absolute paths of files written in Phase 6>]
+```
+
+**Process (priority order — first match wins):**
+1. **Vale via `.vale.ini`** — if `<repo_root>/.vale.ini` exists, run `vale --output=JSON <files>` from the repo root. Parse the JSON output into finding records.
+2. **Project-specific lint script** — if `package.json` has a script matching `*:lint` that covers markdown (e.g., `managed:lint`, `dynatrace:lint`, `docs:lint`), run it on the repo. Parse stderr/stdout for line-level violations. If the script lints the whole tree, filter violations to the target files.
+3. **Generic markdown linter** — if `.markdownlint.json(c)` or `.remarkrc*` exists and the binary is available, run it on the target files.
+4. **Nothing configured** → return `status: NOT_CONFIGURED` with empty violations.
+
+Each violation is normalised into:
+```yaml
+file:     <absolute path>
+line:     <line number>
+rule:     <linter rule identifier, e.g. "Dynatrace.Acronyms">
+severity: BLOCKER | MAJOR | MINOR | NIT      # map from linter severity: error→MAJOR, warning→MINOR, suggestion→NIT
+message:  <human-readable description>
+suggestion: <linter's proposed fix, if any>
+```
+
+**Output:**
+```yaml
+status:     OK | NOT_CONFIGURED | VIOLATIONS_FOUND | ERROR
+linter:     vale | yarn:<script> | markdownlint | remark | none
+command:    <exact command line executed, or null>
+violations: [<array as above, may be empty>]
+error:      <only when status == ERROR: one-line reason, e.g. "vale not on PATH">
+```
+
+**Hard rules:**
+- NEVER promote a MINOR/NIT style finding to BLOCKER. The linter's own severity is authoritative.
+- NEVER modify repo files. Output is advisory; fixes are applied by `doc-fixer`.
+- NEVER run the whole-repo lint if a files-scoped invocation is available (performance + noise reduction).
+
+---
+
 ## 11. Branch and write policy (Jira commands)
 
-Output is always written to **cwd** (where Claude Code was started). Branch behavior is determined by inspecting cwd:
+The two Jira commands have **different** branch/write policies — reflecting their distinct roles (see §2 role clarification). `/impl:jira:epics` never branches and never writes outside the vault. `/impl:jira:docs` writes to a docs repo and may branch+commit there.
 
-| Detected context | Branch | Commit |
+### `/impl:jira:epics`
+
+| Rule | Value |
+|---|---|
+| Required context | Running inside `$VAULT_PATH` (enforced in Phase 0) |
+| Branch | NEVER |
+| Commit | NEVER |
+| Write target | `$VAULT_PATH/jira-drafts/<VI-KEY>/<NEW-EPIC-SLUG>.md` (default; user may override under `$VAULT_PATH`) |
+| Forbidden write paths | `jira-products/`, `_archive/`, anything outside `$VAULT_PATH` |
+
+Vault git hygiene is the user's responsibility — they may or may not have the vault under version control.
+
+### `/impl:jira:docs`
+
+Output is written to **cwd** (where the user invoked the command). Context is classified as follows:
+
+| Detected context | Signals | Branch / commit |
 |---|---|---|
-| **Obsidian vault** — `.obsidian/` found at any ancestor of cwd | NEVER | NEVER |
-| **Other git repo** — `git rev-parse --show-toplevel` succeeds AND no `.obsidian/` ancestor (e.g. Dynatrace docs repo) | YES (opt-in confirmed at plan approval) | YES |
-| **Not in any git repo** | NEVER | NEVER |
+| **Obsidian vault** | `.obsidian/` at any ancestor of cwd | NEVER branch, NEVER commit (treat like `/impl:jira:epics` hygiene) |
+| **Docs git repo** | cwd is inside a git repo (`git rev-parse --show-toplevel` succeeds), no `.obsidian/` ancestor, AND at least one docs-repo signal from §6 Phase 0 is present | Branch = YES (opt-in confirmed at plan approval); commit = YES |
+| **Non-docs git repo** | git repo but no docs signals | Phase 0 asks the user to confirm or cancel. If confirmed, behave as **Docs git repo**. |
+| **Not in any git repo** | Neither condition above | NEVER branch, NEVER commit; write to cwd as plain files |
 
-**Detection algorithm:**
+**Detection algorithm (sketch):**
 ```bash
-# 1. Walk up from cwd looking for .obsidian/ — if found, treat as Obsidian (no git ops)
+# 1. Walk up from cwd looking for .obsidian/
 dir="$(pwd)"
 while [ "$dir" != "/" ]; do
   [ -d "$dir/.obsidian" ] && { context=obsidian; break; }
@@ -521,11 +815,17 @@ while [ "$dir" != "/" ]; do
 done
 
 # 2. Otherwise check git repo
-[ -z "$context" ] && git rev-parse --show-toplevel >/dev/null 2>&1 \
-  && context=git_repo || context=plain_dir
+if [ -z "$context" ] && git rev-parse --show-toplevel >/dev/null 2>&1; then
+  # 2a. Look for docs-repo signals at git root
+  repo_root=$(git rev-parse --show-toplevel)
+  context=git_repo   # baseline; Phase 0 then upgrades to docs_repo or confirms
+fi
+
+# 3. Plain dir otherwise
+[ -z "$context" ] && context=plain_dir
 ```
 
-When branching (only `git_repo`): reuse the clean-tree check and slug derivation from `commands/impl/code.md` Pre-Phase 3. Default branch prefix: `docs/`.
+When branching (docs git repo): see §6 Phase 6.5 for the full branch-setup procedure (fetch base, read CONTRIBUTION/README for naming conventions, confirm name). Fallback branch prefix when no convention is found: `docs/`.
 
 Always show at plan approval: resolved absolute output path, detected context, whether branching+commit will happen.
 
@@ -542,7 +842,7 @@ Always show at plan approval: resolved absolute output path, detected context, w
 **Inputs:**
 ```yaml
 vault_path: <absolute path>
-jira_key:   <e.g. PRODUCT-14902>
+jira_key:   <e.g. JIRA-12345>
 depth:      full | vi-plus-epics | vi-only
 ```
 
@@ -560,18 +860,22 @@ depth:      full | vi-plus-epics | vi-only
 
 **PR URL formats to parse:**
 
-Two hosts are recognised; any other URL is recorded as-is with `status: UNKNOWN` and is surfaced later by `code-diff-summarizer` as `unresolved`.
+Three host categories are recognised; anything else is recorded with `host: other` and is surfaced later by `code-diff-summarizer` as `unresolved`.
 
-- Bitbucket Server (Dynatrace instance):
-  ```
-  https://bitbucket.lab.dynatrace.org/projects/<PROJECT_KEY>/repos/<REPO_NAME>/pull-requests/<PR_ID>
-  ```
-- GitHub Cloud:
+- **Cloud GitHub** (`host: github_cloud`) — hostname exactly `github.com`:
   ```
   https://github.com/<OWNER>/<REPO_NAME>/pull/<PR_ID>
   ```
+- **Cloud Bitbucket** (`host: bitbucket_cloud`) — hostname exactly `bitbucket.org`:
+  ```
+  https://bitbucket.org/<WORKSPACE>/<REPO_NAME>/pull-requests/<PR_ID>
+  ```
+- **Self-hosted Bitbucket Server** (`host: bitbucket_server`) — hostname contains the substring `bitbucket` and is **not** `bitbucket.org`; the exact hostname is treated as opaque (no hardcoded domain):
+  ```
+  https://<bitbucket-server-host>/projects/<PROJECT_KEY>/repos/<REPO_NAME>/pull-requests/<PR_ID>
+  ```
 
-**Assumption:** `bitbucket.lab.dynatrace.org` is the only supported Bitbucket Server host in this iteration; other self-hosted Bitbucket instances would need an additional resolver. Also parse the `Branch:` line and status marker (`**MERGED**` / `**OPEN**` / `**DECLINED**`) — present in both formats.
+Also parse the `Branch:` line and status marker (`**MERGED**` / `**OPEN**` / `**DECLINED**`) — present in all three formats.
 
 **Output (structured handoff):**
 ```yaml
@@ -591,9 +895,9 @@ linked_items:
     role:   root | linked | epic_child
 pull_requests:
   - url:         <full URL>
-    host:        bitbucket.lab.dynatrace.org | github.com | other
+    host:        github_cloud | bitbucket_cloud | bitbucket_server | other
     repo:        <repo name extracted from URL>
-    owner:       <for github.com only — the <OWNER> path segment; null for bitbucket>
+    owner:       <for github_cloud: the <OWNER> segment; for bitbucket_cloud: the <WORKSPACE> segment; null otherwise>
     pr_id:       <id>
     status:      MERGED | OPEN | DECLINED | UNKNOWN
     source_item: <Jira key the URL was found in>
@@ -619,9 +923,9 @@ themes:
 repo_path:   <absolute, e.g. /repos/cluster>
 pr_refs:
   - url:         <full PR URL>
-    host:        bitbucket.lab.dynatrace.org | github.com | other
+    host:        github_cloud | bitbucket_cloud | bitbucket_server | other
     repo:        <repo name>
-    owner:       <github only; null for bitbucket>
+    owner:       <github_cloud: <OWNER>; bitbucket_cloud: <WORKSPACE>; null otherwise>
     pr_id:       <id>
     branch_from: <feature branch from jira-reader>
     branch_to:   <target branch from jira-reader>
@@ -629,6 +933,9 @@ pr_refs:
     status:      MERGED | OPEN | DECLINED | UNKNOWN
 context: |
   <what this repo's PRs relate to, for doc focus>
+jira_keys_hierarchy:   # optional; passed by caller to enable Strategy 4 cross-key grep
+  - <VI-KEY>
+  - <every Epic/Story/Sub-task/Research/RFA/Bug key discovered by jira-reader>
 refresh:
   fetch: true   # default true
   pull:  false  # default false — historical PR diffs do not need the current branch tip;
@@ -639,35 +946,46 @@ refresh:
 
 **Resolver selection by host:**
 
-Before attempting any git operation, inspect `pr_refs[*].host` and route per-PR to the matching resolver:
+Before attempting any git operation, inspect `pr_refs[*].host` and route per-PR to the matching resolver. The rule is: **if the URL is on a cloud service AND an official CLI is available, use the CLI; otherwise fall back to pure-local-git strategies against the cloned repo.**
 
-| Host | Resolver | Notes |
-|---|---|---|
-| `bitbucket.lab.dynatrace.org` | **Bitbucket local-git resolver** (below) — pure local git, no HTTPS calls | Strategies 1–4 cascade; Strategies 2 and 3 are the workhorse |
-| `github.com` | **GitHub resolver via `gh` CLI** (below) — `gh` handles HTTPS + auth; head/base SHAs come back as structured JSON | Requires `gh auth login` on the host; see §17 prerequisites |
-| anything else | Record as `unresolved` with `reason: unsupported host <host>`; caller escalates | Non-Bitbucket-Server, non-GitHub hosts are out of scope for this iteration |
+| Category | Detected by | Cloud CLI (preferred when installed + authenticated) | Fallback |
+|---|---|---|---|
+| `github_cloud` | `host == github.com` | **`gh` CLI** — `gh pr view --json headRefOid,baseRefOid,...` (see "GitHub resolver" below) | Local-git Strategies 1–4 (below) |
+| `bitbucket_cloud` | `host == bitbucket.org` | **None yet** — Atlassian's official `acli` does not currently support Bitbucket (verified against ACLI v1.3.15 reference). A future iteration may adopt an official CLI when Atlassian ships one, or a vetted third-party tool (e.g. Appfire's Bitbucket Cloud CLI, the community `bkt`). Until then, no Cloud CLI is shipped or assumed. | Local-git Strategies 1–4 (below) |
+| `bitbucket_server` | `host` contains `bitbucket` **and** is **not** `bitbucket.org` (treat the hostname as opaque — no host string is hardcoded in the plugin) | — | Local-git Strategies 1–4 (below) |
+| `other` | anything else | — | Record as `unresolved` with `reason: unsupported host <host>`; caller escalates |
 
-**URL parse note:** for Bitbucket URLs, extract **only** `<REPO_NAME>` for the local-lookup path `<repos_base>/<REPO_NAME>`. The `<PROJECT_KEY>` prefix (`RX`, `sus`, etc.) identifies the Bitbucket project namespace on the server and plays no role in local resolution — do not confuse the two or try to match both. For GitHub URLs, `<REPO_NAME>` is similarly the only piece used for the repo path; `<OWNER>` is passed to `gh --repo <OWNER>/<REPO>` but not used in the filesystem path.
+**Fallback semantics (per Q11 resolution):** when a cloud URL's preferred CLI is not installed or not authenticated on the host, the resolver silently falls back to the local-git strategies rather than failing. The repo must still be cloned under `<repos_base>/<REPO>` for the fallback to succeed; if it isn't, the per-PR result is `unresolved` with `reason: CLI not available and branch/merge-commit search did not resolve`.
 
-**Bitbucket local-git resolver (pure local git — NO HTTPS calls ever):**
+**URL parse notes:**
 
-The default Bitbucket Server clone does **not** fetch `refs/pull-requests/*/from` refs — so Strategy 1 below is an optimistic first attempt that rarely hits unless the user has pre-configured the extra refspec and run `git fetch` manually. **Strategies 2 and 3 are the real workhorse** for Bitbucket repos; treat Strategy 1 as best-effort and fall through silently when it misses.
+- For **Bitbucket Server** URLs, extract **only** `<REPO_NAME>` for the local-lookup path `<repos_base>/<REPO_NAME>`. The `<PROJECT_KEY>` prefix identifies the Bitbucket project namespace on the server and plays no role in local resolution — do not confuse the two or try to match both.
+- For **Bitbucket Cloud** URLs, the `<WORKSPACE>` segment is analogous to the Server `<PROJECT_KEY>` and is not used for local lookup.
+- For **GitHub** URLs, `<REPO_NAME>` is the only piece used for the filesystem path; `<OWNER>` is passed to `gh --repo <OWNER>/<REPO>` but not used in the path.
 
-1. **Strategy 1 — Bitbucket Server PR refs (optimistic; usually absent).** Try `git rev-parse refs/pull-requests/<pr_id>/from`. If present, use as head; derive base via `git merge-base <target_branch> <head>`. If the ref does not exist (the default for a fresh clone), fall through to Strategy 2. Do **not** attempt to configure the refspec or fetch it at runtime — that is an explicit opt-in step for the user, not an automatic side effect.
+**Local-git strategies (used for Bitbucket Server, Bitbucket Cloud when no CLI is available, and GitHub when `gh` is not available — all pure local git, no HTTPS calls):**
+
+The default Bitbucket Server clone does **not** fetch `refs/pull-requests/*/from` refs — so Strategy 1 below is an optimistic first attempt that rarely hits unless the user has pre-configured the extra refspec and run `git fetch` manually. **Strategies 2 and 3 are the real workhorse** for these hosts; treat Strategy 1 as best-effort and fall through silently when it misses.
+
+1. **Strategy 1 — Bitbucket Server PR refs (optimistic; usually absent).** Try `git rev-parse refs/pull-requests/<pr_id>/from`. If present, use as head; derive base via `git merge-base <target_branch> <head>`. If the ref does not exist (the default for a fresh clone), fall through to Strategy 2. Do **not** attempt to configure the refspec or fetch it at runtime — that is an explicit opt-in step for the user, not an automatic side effect. (On Bitbucket Cloud and GitHub clones these refs don't exist either — Strategy 1 simply no-ops and the resolver moves on.)
 2. **Strategy 2 — Branch search.** `git branch -a --list "*<pr_id>*"` and `git branch -a --list "*<issue_key>*"`. If unique match → use as head.
-3. **Strategy 3 — Merge-commit search.** `git log --all -E --grep="[Pp]ull[ _-]?[Rr]equest[ _-]?#?<pr_id>\b" -n 5` and `git log --all -E --grep="<title_keyword>" -n 5`. The primary pattern matches the Bitbucket / GitHub merge-commit title format `Pull request #<PR_ID>: …` (note the `#` separator — a previous draft used `pull[- ]request[- ]<pr_id>` which did not match). For a merge commit: head = `<commit>^2`, base = `<commit>^1`.
-4. **Strategy 4 — Last resort.** `git log --all --grep="<issue_key>" --oneline` to surface candidates. Do NOT auto-pick; record under `unresolved_prs`.
+3. **Strategy 3 — Merge-commit search.** `git log --all -E --grep="[Pp]ull[ _-]?[Rr]equest[ _-]?#?<pr_id>\b" -n 5` and `git log --all -E --grep="<title_keyword>" -n 5`. The primary pattern matches the merge-commit title format `Pull request #<PR_ID>: …` produced by both Bitbucket and GitHub (note the `#` separator — a previous draft used `pull[- ]request[- ]<pr_id>` which did not match). For a merge commit: head = `<commit>^2`, base = `<commit>^1`.
+4. **Strategy 4 — Cross-hierarchy Jira-key commit search (last resort).** Accept an optional `jira_keys_hierarchy` input (passed from the caller: the VI key + every key discovered by `jira-reader` — Epics, Stories, Sub-tasks, Research, RFA, Bugs). For each key, run `git log --all --grep="<key>" --oneline`. The matches are treated as "commits associated with this feature" rather than a specific reconstructed PR. Return every match's full diff (`git show --format= <sha>`) as a **separate per-PR entry** with `pr_id: <the PR's own id, best-effort>` and `resolved_via: jira_key_commits`. Annotate the `summary` explicitly: *"Diff reconstructed from commit <sha> matched on Jira key <key>; this may not correspond to the original PR content exactly."*
 
-If none resolve: record as `unresolved` and continue (caller escalates).
+   If the original PR's merge-commit and branch are both missing (Strategies 1–3 failed) but Strategy 4 finds commits by key: the PR is **partially resolved** — the content is drawn from key-matched commits, and the output notes this clearly.
+
+   If `jira_keys_hierarchy` is not provided (caller didn't pass it), fall back to the original single-key behaviour (grep only the PR's own `source_item` key) and emit candidate SHAs in `unresolved_prs` for user review, as before.
+
+If all strategies fail (including Strategy 4): record under `unresolved_prs` and continue (caller escalates).
 
 **Note on non-MERGED PRs:** The default filter is MERGED-only. If the caller opts into OPEN / DECLINED / UNKNOWN PRs, expect a high rate of `unresolved`: DECLINED PRs often have no merge commit (Strategy 3 fails) and feature branches may have been deleted after decline (Strategy 2 fails). Surface the unresolved count clearly in `aggregate_summary` so the documentation writer knows what's missing.
 
-**GitHub resolver (via `gh` CLI):**
+**GitHub resolver (via `gh` CLI, used when `host == github_cloud` AND `gh` is installed + authenticated):**
 
 1. **Resolve head/base SHAs.** Run `gh pr view <pr_id> --repo <owner>/<repo> --json headRefOid,baseRefOid,state,title,mergeCommit`. This is the single authoritative call. `gh` handles authentication via `gh auth login` (configured once on the host; see §17).
 2. **Ensure commits are local.** If `headRefOid` or `baseRefOid` is missing from the local clone (`git cat-file -e <sha>` returns non-zero), run `git fetch origin <headRefOid> <baseRefOid>`. If fetch is rejected (server refuses direct-SHA fetch), fall back to `gh pr checkout <pr_id> --repo <owner>/<repo>` which fetches the branches.
 3. **Produce diff.** `git diff <baseRefOid>..<headRefOid>`. Set `resolved_via: gh_cli`.
-4. **Failure modes:** `gh` not installed → `status: REFRESH_BLOCKED` with reason `gh CLI not found`. Not authenticated → `status: REFRESH_BLOCKED` with reason `gh auth required`. PR not found (deleted, private, wrong repo) → record in `unresolved_prs` with the gh error.
+4. **Failure modes:** `gh` not installed → drop to local-git strategies (do NOT set REFRESH_BLOCKED — the fallback may still succeed). Not authenticated → same fallback. PR not found (deleted, private, wrong repo) → record in `unresolved_prs` with the gh error; do not fall back (the local repo won't have it either).
 
 **Output:**
 ```yaml
@@ -676,9 +994,12 @@ repo:      <short repo name — the basename of repo_path>
 repo_path: <absolute path as received in input, so callers can reference the source tree>
 per_pr:
   - pr_id: <id>
-    resolved_via: pr_ref | branch_search | merge_commit | issue_grep | gh_cli | unresolved
+    resolved_via: pr_ref | branch_search | merge_commit | jira_key_commits | gh_cli | unresolved
     summary: |
-      <prose; 3–8 sentences: new behavior, changed behavior, API surface>
+      <prose; 3–8 sentences: new behavior, changed behavior, API surface.
+      If resolved_via == jira_key_commits, the summary must note that the diff
+      was reconstructed from commits matching a Jira key and may not exactly
+      correspond to the original PR content.>
 unresolved_prs:
   - pr_id: <id>
     reason: <why resolution failed>
@@ -756,7 +1077,8 @@ gap_summary: |
 | Jira key dir not found | "Re-enter key", "Cancel" |
 | Repo missing under `/repos/` | "Skip and continue without its PRs", "I'll clone it — wait", "Cancel", "Use different /repos path" |
 | `git fetch` failed | "Continue with current local state", "Skip this repo", "Cancel" |
-| `unresolved_prs` returned | "Show candidates and let me pick", "Skip this PR", "Skip this repo", "Cancel" |
+| `unresolved_prs` returned (some, not all) | "Show candidates and let me pick", "Skip this PR", "Skip this repo", "Cancel" |
+| **All PRs across all repos unresolved** after every strategy (incl. Strategy 4 cross-key grep) | `["Proceed with Jira-only content (Recommended — writer/planner draw from jira-reader output; final report notes missing PR content)", "Review candidates one by one", "Cancel"]`. Presented **once** as an aggregate gate rather than per-PR, to avoid N clicks on a big VI. If selected, the writer and planner run without any diff summaries and the Phase 9 report lists every skipped PR with its unresolved reason. |
 | Use case B with no repos derivable from index | "List repos to scan manually", "Proceed without code scan", "Cancel" |
 | `doc-reviewer` BLOCK after one fix cycle | For each unresolved BLOCKER, ask individually: `["Provide manual fix notes (you'll be prompted)", "Defer to a follow-up issue (record in Phase 9 report)", "Override and accept the finding", "Cancel the whole run"]`. "Cancel" aborts. "Override" records the override + rationale in the Phase 9 `### Deferred items` section. "Defer" records the finding there without an override flag. "Manual fix notes" lets the user type the fix text, which is then applied by `doc-fixer` in a bounded one-shot pass. |
 | Output file already exists | "Write with -v2 suffix (Recommended — non-destructive)", "Append", "Overwrite", "Cancel" |
@@ -768,7 +1090,7 @@ gap_summary: |
 1. `/impl:code` on a code change produces a passing test for the new behavior before marking done.
 2. `/impl:docs` on a simple doc change does not trigger tests, branching, or code review.
 3. `/impl:jira:docs` on a VI key reads the vault markdown, summarizes merged PR diffs from local repos, writes traceable documentation, and passes doc-reviewer.
-4. `/impl:jira:epics` on a VI key reads the vault markdown, scans code repos for reuse/gaps, writes child Epics with testable acceptance criteria, and passes doc-reviewer.
+4. `/impl:jira:epics` on a VI key reads the vault markdown, scans code repos for reuse/gaps, writes child Epic drafts to `$VAULT_PATH/jira-drafts/<VI-KEY>/` with testable acceptance criteria, and passes `epic-reviewer`.
 5. All existing regression baseline behavior from the original `/impl` is preserved unchanged.
 6. All new/modified files follow existing `dev-workflows` plugin conventions.
 7. `/impl` continues to work without modification to existing invocations.
@@ -778,16 +1100,22 @@ gap_summary: |
 ## 17. Out of scope
 
 - Standalone `/write-tests` command (test-writer is internal pipeline agent only)
-- HTTPS/REST API calls to Bitbucket Server (pure local git + filesystem only; GitHub is the sole exception — it's handled via the `gh` CLI wrapper, not raw HTTPS)
+- Direct HTTPS/REST calls to Bitbucket (Cloud or self-hosted Server) — all Bitbucket PR resolution is pure local git. At time of writing, Atlassian's official `acli` does not cover Bitbucket; when it does (or a vetted third-party CLI becomes the community standard), adding a Bitbucket Cloud resolver is a strictly additive change to the resolver table in §13.
+- Direct HTTPS/REST calls to GitHub outside the `gh` CLI wrapper
 - PR creation (branch + commit only; PR is a future task)
 - Rewriting Jira items (jira-reader is read-only)
+- Re-crawling / re-encoding external style-guide URLs (the docs-style-checker wraps the repo's existing Vale/lint tooling, which is the canonical source — see §10c rationale)
 - Cloning missing repos (escalate to user instead)
-- Non-`bitbucket.lab.dynatrace.org` Bitbucket Server hosts, and Git hosts other than `github.com` (deferred — would need an additional resolver)
+- Git hosts whose hostname does not match `github.com`, `bitbucket.org`, or a `bitbucket*` pattern (treated as `other` → `unresolved`; add a resolver in a future iteration)
+- Running `/impl:jira:docs` outside a docs repo (Phase 0 detects and asks the user to confirm or cancel)
+- Running `/impl:jira:epics` outside the Obsidian vault (Phase 0 refuses; vault git management remains the user's responsibility)
 - Changes outside `plugins/dev-workflows` (flag before touching)
 
 ### Environment prerequisites
 
-- **`gh auth login`** must be run once on the host before `/impl:jira:docs` or `/impl:jira:epics` will resolve GitHub PRs. The GitHub resolver shells out to `gh` and relies on its configured credentials; without an authenticated session, the resolver returns `status: REFRESH_BLOCKED` with reason `gh auth required`.
+- **`gh auth login`** — required once on the host to enable GitHub PR resolution. Without it, GitHub URLs fall back to local-git strategies against the cloned repo (no hard failure).
+- **No Bitbucket CLI is required or assumed** in this iteration. Bitbucket Cloud and self-hosted Bitbucket Server URLs are resolved purely from the local clone.
+- **`vale`** (optional but recommended) — when the target docs repo has `.vale.ini`, `docs-style-checker` will invoke `vale` to match what the repo's CI runs. If `vale` is not on PATH, the agent falls back to `yarn <project>:lint` (or similar) as defined in the repo's `package.json`. If neither is available, style checks are skipped and `doc-reviewer` is the only style gate.
 - **Recommended environment: AI Container.** These commands work best when the agent is run inside the [ihudak/ai-containers](https://github.com/ihudak/ai-containers) environment, which:
   - Mounts `/repos` with all relevant code repositories already cloned, so the default `<repos_base>` just works.
   - Installs `gh` automatically.
