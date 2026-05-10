@@ -7,7 +7,7 @@ Ivan Gudak's private Claude Code plugin marketplace.
 | Plugin | Description |
 |--------|-------------|
 | [dev-workflows](plugins/dev-workflows/) | `/impl` (dispatcher), `/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics`, `/vuln`, `/upgrade` — Opus-backed planning, code review, product-docs review, Epic review, vulnerability remediation, dependency upgrades |
-| [obsidian-llm-wiki](plugins/obsidian-llm-wiki/) | Seven slash commands for compiling Obsidian vault knowledge into a persistent, cross-referenced wiki; supports Claude Code and GitHub Copilot |
+| [obsidian-llm-wiki](plugins/obsidian-llm-wiki/) | Eight slash commands for compiling Obsidian vault knowledge into a persistent, cross-referenced wiki; supports Claude Code and GitHub Copilot |
 
 ## Installation
 
