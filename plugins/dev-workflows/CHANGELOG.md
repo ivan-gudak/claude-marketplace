@@ -6,21 +6,22 @@ Versions follow semver at the **repo** level.
 
 ## [1.1.0] — In progress
 
-`plugin.json` and marketplace.json now declare `1.1.0`. The work is being landed in increments; Increments A and B have been committed so far.
+`plugin.json` and marketplace.json now declare `1.1.0`. The work is being landed in increments; Increments A, B, and C have been committed so far.
 
 ### Added
-- **Namespaced command layout.** New directory `commands/impl/` with sub-files `code.md`, `docs.md`, `jira/docs.md`, `jira/epics.md` — these become the slash commands `/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics` via Claude Code's directory-to-namespace convention. Stubs for `docs.md`, `jira/docs.md`, `jira/epics.md` remain in place; full workflows arrive in Increments C (`/impl:docs`) and D (the two Jira commands).
+- **Namespaced command layout.** New directory `commands/impl/` with sub-files `code.md`, `docs.md`, `jira/docs.md`, `jira/epics.md` — these become the slash commands `/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics` via Claude Code's directory-to-namespace convention. Stubs for `jira/docs.md` and `jira/epics.md` remain in place; full workflows arrive in Increment D.
 - **`/impl:code` full workflow (Increment B).** `commands/impl/code.md` is the canonical code-implementation command: classify → optional Opus planning → feature branch → **capture test baseline (new Pre-Phase 3.5)** → implement → **test-writing + regression verification (new Phase 3.5)** → optional Opus review → Phase 4 maintenance → Phase 5 report. Same structure as the pre-split `/impl`, with the two new test-related phases inserted and three new invariants added (`ALWAYS capture baseline`, `NEVER skip Phase 3.5`, `AFTER two fix-loop attempts, stop and surface`).
 - **`commands/impl.md` is now a verbatim alias** of `commands/impl/code.md` with a `<!-- KEEP IN SYNC WITH commands/impl/code.md -->` marker at the top. Any future change to `impl/code.md` must be reflected here verbatim.
 - **`agents/test-writer.md` (Increment B).** Default-model agent that writes tests for new or changed behaviour based on a diff. Mirrors `test-baseline`'s framework detection and returns `Framework: not detected` immediately if none matches, so the caller can ask the user. Does NOT run tests — the caller runs `test-baseline` verify separately. Hard rules: never retrofit tests for unchanged code, never invent a framework the project doesn't already use, never modify production code.
+- **`/impl:docs` full workflow (Increment C).** `commands/impl/docs.md` is the one-shot doc-editing command: classify (always SIMPLE or MODERATE — redirects to `/impl:jira:docs` / `/impl:jira:epics` if the task turns out to be SIGNIFICANT on inspection) → plan with the `/impl:code`-style repo-exploration subagent → implement → validation checks (link integrity, heading structure, frontmatter parse, broken `[[wikilinks]]`) → Phase 4 maintenance → Phase 5 report. No branch, no baseline, no tests, no Opus, no commit — the user manages git manually. Phase 4 handoff sets `Change type: docs` and `Command run: /impl:docs`. Explicit invariants block all five "never" axes.
 
 ### Changed
 - **`agents/impl-maintenance.md` input / output enums.** The Inputs section now requires a `Command run:` field (one of `/impl`, `/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics`, `/vuln`, `/upgrade`); missing values default to `/impl:code` with a note in the report. The "Command workflow improvements" output enum broadened to match, so maintenance suggestions from the three new Jira/docs commands are scoped to the right command variant.
 - **`commands/vuln.md` and `commands/upgrade.md` session handoffs.** Both now pass `Command run: /vuln` and `Command run: /upgrade` respectively to `impl-maintenance`. Without this, the agent would default to `/impl:code` and misattribute any `/vuln` or `/upgrade` suggestions — a silent regression the spec's Wave 6 W6-m2 + §3 update implied but didn't explicitly call out for the two pre-existing commands.
+- **`commands/impl/code.md` Phase 4 change summary block now includes `Change type: code`** (and a matching invariant). Aligns with `/impl:docs` (`Change type: docs`) and the two upcoming Jira commands (`docs`). The field is a scoping hint for the Documentation / Knowledge / Instructions maintenance agents — their prompts already reference the change summary block, so no agent prompt changes are needed.
 
 ### Not yet started
-- Increment C: `/impl:docs` one-shot doc-editing workflow.
-- Increment D: the two Jira commands (`/impl:jira:docs`, `/impl:jira:epics`) plus the eight supporting agents (`jira-reader`, `code-diff-summarizer`, `code-scanner`, `doc-location-finder`, `doc-planner`, `docs-style-checker`, `doc-reviewer` Opus, `epic-reviewer` Opus, `doc-fixer`).
+- Increment D: the two Jira commands (`/impl:jira:docs`, `/impl:jira:epics`) plus the nine supporting agents (`jira-reader`, `code-diff-summarizer`, `code-scanner`, `doc-location-finder`, `doc-planner`, `docs-style-checker`, `doc-reviewer` Opus, `epic-reviewer` Opus, `doc-fixer`).
 - Increment E: `hooks/preload-context.sh` regex update for the `/impl:*` variants, README refresh, marketplace.json description refresh.
 
 Design spec: `docs/superpowers/specs/2026-04-30-impl-split-and-test-writing-design.md`.

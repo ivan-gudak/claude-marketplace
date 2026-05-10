@@ -330,6 +330,7 @@ b. Compose a **change summary block**:
 
 ```
 Implementation: [one-sentence description of what was built]
+Change type: code
 Classification: [SIMPLE | MODERATE | SIGNIFICANT | HIGH-RISK]
 Files changed (from git diff --stat):
 <paste the git diff --stat output>
@@ -456,5 +457,6 @@ Output a structured report — do NOT ask any closing confirmation:
 - ALWAYS use `choices` arrays for decision points; last choice is always `"Other… (describe)"`
 - ALWAYS produce the Phase 5 report as the final output
 - ALWAYS pass `Command run: /impl:code` in the Phase 4 Agent 4 session handoff, whether the user invoked `/impl:code` directly or the `/impl` alias — the alias is a transport detail, not a distinct workflow
+- ALWAYS pass `Change type: code` in the Phase 4 change summary block (scopes the four maintenance agents' suggestions to code-change territory — docs / Jira variants use `docs`)
 - AFTER one review-fixer pass + one re-review, if verdict is still BLOCK: stop and surface to user — do NOT loop
 - AFTER two Phase 3.5 fix-loop attempts, if regressions remain: stop and surface to user — do NOT loop
