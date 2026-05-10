@@ -4,6 +4,22 @@ All notable changes to this repo are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow semver at the **repo** level.
 
+## [1.1.0] — In progress
+
+`plugin.json` and marketplace.json now declare `1.1.0`. The work is being landed in increments; only Increment A (scaffolding) has been committed so far.
+
+### Added
+- **Namespaced command layout.** New directory `commands/impl/` with sub-files `code.md`, `docs.md`, `jira/docs.md`, `jira/epics.md` — these become the slash commands `/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics` via Claude Code's directory-to-namespace convention. All four files are currently stubs — they exist so Claude Code can load the plugin under the new layout without errors. Full workflows arrive in Increments B (`/impl:code`), C (`/impl:docs`), and D (the two Jira commands).
+- **`/impl` continues to work unchanged** as the canonical code-implementation workflow. Once `/impl:code` is fully written (Increment B), `/impl` will become a verbatim duplicate of `commands/impl/code.md` with a `KEEP IN SYNC` marker.
+
+### Not yet started
+- Increments B–E: the real command bodies, the four new agents (`test-writer`, `doc-reviewer`, `epic-reviewer`, `doc-fixer`, `doc-planner`, `doc-location-finder`, `docs-style-checker`, `jira-reader`, `code-diff-summarizer`, `code-scanner`), the `preload-context.sh` regex update, the `impl-maintenance` update to recognise `/impl:*` variants, and the README refresh.
+
+Design spec: `docs/superpowers/specs/2026-04-30-impl-split-and-test-writing-design.md`.
+Review history: `docs/superpowers/specs/2026-05-08-impl-split-and-test-kiro-review.md` (waves 1–7).
+
+---
+
 ## [Unreleased]
 
 ### Added

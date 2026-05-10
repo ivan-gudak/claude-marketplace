@@ -1,5 +1,7 @@
 # dev-workflows
 
+> **1.1.0 in progress** — the `/impl` command is being split into `/impl:code`, `/impl:docs`, `/impl:jira:docs`, and `/impl:jira:epics`; stubs for the new commands are currently live-loadable, and full workflows plus four new agents land in subsequent increments. See the design spec at `docs/superpowers/specs/2026-04-30-impl-split-and-test-writing-design.md` and `CHANGELOG.md` for status.
+
 Three Claude Code slash commands for structured implementation, vulnerability remediation, and dependency upgrades — with Opus-backed risk planning, post-implementation code review, and test regression detection.
 
 ## Commands
