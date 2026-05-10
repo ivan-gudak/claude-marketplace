@@ -14,7 +14,7 @@
 | **Spec section(s)** | The section(s) of the design spec that must be edited |
 | **Resolution** | One-liner describing what was actually changed (filled when `Fixed`) |
 
-**Progress:** 29 / 29 fixed · 4 critical · 9 major · 10 minor · 6 nits · 2 post-review amendments (A1 + wave-5 feedback)
+**Progress:** 29 / 29 fixed from the original audit · 4 critical · 9 major · 10 minor · 6 nits · 4 post-review amendments (A1 + wave-5 feedback + wave-6 self-audit + wave-7 reality-ground)
 
 ---
 
@@ -92,7 +92,7 @@ Pull request #12345: PROJ-1234 handle update windows...
 Pull request #12346: NOISSUE remove empty metadata...
 ```
 
-The separator is `#`, not `-` or space. The regex `pull[- ]request[- ]<pr_id>` won't match `Pull request #179969` (missing `#` in the pattern, and the `[- ]` between `request` and id is literal hyphen/space only — no `#`).
+The separator is `#`, not `-` or space. The regex `pull[- ]request[- ]<pr_id>` won't match `Pull request #12345` (missing `#` in the pattern, and the `[- ]` between `request` and id is literal hyphen/space only — no `#`).
 
 **Fix:** Replace with `"[Pp]ull.?[Rr]equest.?#?<pr_id>"` or specifically anchor on `"Pull request #<pr_id>:"`.
 
@@ -568,3 +568,118 @@ For completeness — these are strong points worth preserving:
 - Reuse of existing `test-baseline` and Phase 4 maintenance agents across commands is good design hygiene.
 - Escalation table (Section 15) covers the realistic failure modes.
 - Parallel `code-diff-summarizer` / `code-scanner` design maps well to the real data (the test VI we used for grounding spans 2+ repos).
+
+
+---
+
+## Wave 6 — Fresh-context self-audit (2026-05-10)
+
+**Source:** a fresh-context reviewer subagent pointed at the spec, asked to re-audit it end-to-end with the tracker as optional supporting context.
+
+**Status:** Applied (2026-05-10). Spec updated across §§4, 5, 6, 7, 14, 15.
+
+**Audit summary:** 14 findings (0 blocker, 3 major, 7 minor, 4 nit). Verdict: NEEDS FIXES — the spec was implementable, but three agent status-handling gaps and seven schema / cross-reference fidelity issues would have surfaced as ambiguities mid-implementation. All 14 applied.
+
+### MAJOR — agent status handling gaps
+
+| # | Fix |
+|---|---|
+| W6-M1 | §15 BLOCK-escalation row generalised from `doc-reviewer` to `doc-reviewer` OR `epic-reviewer`; added note that "Defer" means an Epic-refinement note in the draft when the workflow is `/impl:jira:epics`. |
+| W6-M2 | §6 Phase 5.7 now specifies what happens for `doc-planner` `PARTIAL` status and for each `recommended_action` gap value: `"ask user"` → inline prompt + single re-invocation; `"mark TODO in draft"` → writer emits `<!-- TODO: ... -->` marker; `"skip with note"` → carried into Phase 9 report. |
+| W6-M3 | §6 Phase 5.5 now handles `doc-location-finder` `EMPTY` (prompts for manual path entry) and `LOW_CONFIDENCE` (displays `confidence_notes`; flips default choice from "Accept all" to "Adjust individual"). |
+
+### MINOR — schema and cross-reference fidelity
+
+| # | Fix |
+|---|---|
+| W6-m1 | §6 Phase 4: `status_marker` → `status` (matches the `jira-reader` output schema's `pull_requests[].status` field; disambiguates from top-level agent `status`). |
+| W6-m2 | §5 `/impl:docs`: Phase 4 handoff now sets `change_type: docs` (was the only command missing it; aligns with `/impl:jira:docs` and `/impl:jira:epics`). |
+| W6-m3 | §15: added `DIRTY_TREE` row; clarified `REFRESH_BLOCKED` mapping to both `code-diff-summarizer` and `code-scanner`. |
+| W6-m4 | §6 Phase 5: "Section 13 escalation rules" → "Section 15" (rules live in §15, not §13). |
+| W6-m5 | §14 `code-scanner`: explicitly emits `REFRESH_BLOCKED` on `git pull --ff-only` failure (was in the output status enum but not produced by any process step). |
+| W6-m6 | §7 Phase 7: explicit note that there is **no** `docs-style-checker` step for Epics (prevents implementers from copy-pasting the docs flow). |
+| W6-m7 | §6 Phase 5.7: added `repo_root` to the `doc-planner` invocation inputs (required by the agent's schema in §10b but not passed by the caller). |
+
+### NIT — polish
+
+| # | Fix |
+|---|---|
+| W6-n1 | §7 Phase 0: "Change to `<VAULT_PATH>` and retry (Recommended)" → "Cancel and re-run after `cd <VAULT_PATH>`" (both original choices cancelled; removed contradictory "Recommended" + "Default = Cancel"). |
+| W6-n2 | §6 Phase 6 Jira-key example: `[[JIRA-1127]]` → `[[<JIRA_KEY>]]` (the last internal-looking identifier; the prior sanitisation sweep missed it). |
+| W6-n3 | §4: "Phase 5 report" → "the final report — Phase 5 of the inherited /impl:code workflow" (clarifies the cross-reference to inherited behaviour). |
+| W6-n4 | Tracker arithmetic: "6 to 9 new agents" → "6 to 10 (4 new)" with all 10 named (existing 6: `test-writer`, `doc-reviewer`, `doc-fixer`, `jira-reader`, `code-diff-summarizer`, `code-scanner`; new 4: `epic-reviewer`, `doc-planner`, `doc-location-finder`, `docs-style-checker`). |
+
+**Final state after Wave 6:** 0 BLOCKERs, 0 MAJORs, 0 MINORs, 0 NITs from the audit. 0 internal identifiers, 0 repo-specific paths, 0 internal Jira keys leaking. Status-to-escalation coverage: every non-OK status emitted by any agent is handled either at the caller (Phase 5.5 / 5.7 / etc.) or in §15.
+
+---
+
+## Wave 7 — Reality-grounded review (2026-05-10)
+
+**Source:** a manual reality-grounded review (session model) cross-checking every agent input/output and each phase of every command against the actual artifacts the plugin will touch: `plugins/dev-workflows/` source, a representative product-docs repo under `/repos/`, a real code repo under `/repos/` referenced by a real PR in the vault, and a real Jira export under `$VAULT_PATH/jira-products/<VI_KEY>/`.
+
+**Motivation:** Waves 1–6 were all spec-internal consistency audits. They caught many things but never verified the spec against the systems it describes. Wave 7 is the first reality-ground.
+
+**Status:** Applied (2026-05-10). Spec updated across §§3, 4, 6, 8, 11, 12, 13, 14, 16, 17.
+
+### Grounding (what was checked)
+
+- **Plugin source**: existing `commands/impl.md`, `hooks/preload-context.sh`, and 5 existing agents read end-to-end. Opus agents (`risk-planner`, `code-review`) confirmed to use `model: opus` in frontmatter **and** receive `model: "opus"` on the Agent call — the belt-and-braces routing the spec relies on.
+- **jira-products export**: the real per-VI index (`<VI_KEY>-index.md`) has the 5-column `| Key | Type | Status | Summary | Role |` header the spec assumes. Role enum matches (`root`, `linked`, `epic_child`). Type enum covers all cases (`ValueIncrement`, `Epic`, `Story`, `Research`, `Request for Assistance`). VI's own file at the nested `<VI>/<VI>/<VI>.md` path matches the spec. One export uses capitalised `Attachments/` instead of lowercase `attachments/` — spec updated.
+- **PR URL / branch / status markers**: a real self-hosted-Bitbucket PR URL of shape `https://<bitbucket-server-host>/projects/<PROJECT>/repos/<repo>/pull-requests/<PR_ID>` parses correctly under the §13 pattern. Status markers `**MERGED**` / `**DECLINED**` confirmed. Branch line format uses backticks around names and a Unicode `→` arrow (not `->` ASCII) — was previously undocumented.
+- **docs-repo signals**: a representative product-docs repo under `/repos/` hits 3 of the 6 listed signals (`.docstack/`, `.vale.ini`, `DOCUMENTATION-GUIDELINES.md`, plus `_snippets/` under product directories). Detection works.
+- **Vale config**: the real `.vale.ini` uses `BasedOnStyles = <ProjectStyle>, Microsoft` — confirms §10c's rationale that wrapping the repo's existing tooling is the only correct path (the project style is local to `.vale/styles/`, not in a public package).
+- **Branch-naming convention**: the real `CONTRIBUTION.md` documents `<your-name-or-initials>/<JIRA-ISSUE-KEY>-<short-branch-name>` — the §6 Phase 6.5 grep-for-section heuristic will find it.
+- **Strategy 3 regex**: a real merge commit of shape `Pull request #<PR_ID>: <JIRA_KEY> <feature summary>` matches the spec's `[Pp]ull[ _-]?[Rr]equest[ _-]?#?<pr_id>\b` regex ✓.
+- **Strategy 2 ambiguity**: `git branch -a --list "*<JIRA_KEY>*"` in the real code repo returns **two** matching branches (feature branch + earlier revision) — triggering the previously undefined "ambiguous match" case.
+- **Default branch**: the real code repo has `git symbolic-ref refs/remotes/origin/HEAD → refs/remotes/origin/master`, not `main`.
+- **Image convention**: the real product-docs repo has **zero** `.png` / `.jpg` / `.gif` files under the product content tree. Every image reference uses external CDN URLs. The `CONTRIBUTION.md` explicitly instructs "uploaded to the Image Manager" for new images. **This is a major mismatch with the spec's copy-to-page-local-img-dir assumption.**
+
+### Findings and fixes
+
+#### BLOCKER
+
+| # | Finding | Fix applied |
+|---|---|---|
+| W7-B1 | §6 Phase 6 screenshot placement assumed every docs repo has local `img/` or `images/` directories; the reality-ground repo uses external CDN / Image Manager uploads with zero local image files, so the writer would either silently fail or invent a non-idiomatic directory. | `doc-planner` (§10b) now detects `image_policy: local | cdn_upload_required | ambiguous` by sampling sibling / ancestor markdown pages. Output schema adds per-screenshot `staging` path (for CDN-upload repos — staged under `/tmp/<JIRA_KEY>-screenshots/`, **never** copied into the repo), `upload_note`, and policy-dependent `dest`. §6 Phase 6 "Place screenshots" rewritten with three branches (local copy / stage + TODO placeholder / ask user). §6 Phase 1 screenshot prompt text updated to reflect the new flow. §6 Phase 9 adds `### Screenshots to upload manually` section populated only when staging occurs. §9 `doc-reviewer` review dimension for screenshots updated to check both policies. |
+
+#### MAJOR
+
+| # | Finding | Fix applied |
+|---|---|---|
+| W7-M1 | §6 Phase 6.5 step 1 hardcoded "default `main`" and §14 Process step 2 used `<default-branch>` without specifying resolution — both incorrect for master-default legacy repos (the real code repo used for grounding is one). | Both steps rewritten to resolve the default via `git symbolic-ref --short refs/remotes/origin/HEAD`, with a fallback chain (run `git remote set-head origin --auto`; then try `main`, then `master`). §14 explicitly emits `REFRESH_BLOCKED` with reason `cannot resolve default branch` if the fallback chain exhausts. |
+| W7-M2 | §3 "Hook scope" said "pattern-match against `/impl` and all `/impl:*` variants" but the existing `preload-context.sh` regex `^/(impl\|vuln\|upgrade)[[:space:]]+` literally does not match `/impl:code foo` (the `:` is not whitespace). No corrected regex was given, so implementers would have to invent one. | Added a **Normative regex** block to §3 specifying the replacement: `^/(impl(:(code\|docs\|jira(:(docs\|epics))?))?\|vuln\|upgrade)[[:space:]]+[^[:space:]-]` with the longest-match alternation explicit so `/impl:jira:docs` binds before `/impl`. |
+| W7-M3 | §11 detection sketch produced `context ∈ {obsidian, git_repo, plain_dir}` — three branches — but the §11 context table above had **four** rows (obsidian, docs git repo, non-docs git repo, not in git repo). Implementers following the sketch literally would never trigger the "non-docs git repo → confirm with user" path. | Sketch extended to run the §6 Phase 0 signal check inside the `git_repo` branch and produce `docs_repo` or `non_docs_repo`. Added a sentence mapping the four states to the four table rows. Two stale references elsewhere in the spec (§6 Phase 1 clarification, §6 Phase 6.5 trigger condition) updated to the new 4-state vocabulary. |
+| W7-M4 | §12 documented URL parsing and status-marker values but never showed the actual `## Pull Requests` section markdown structure it needs to parse — a 2-line bulleted item per PR, with backticked branch names and a Unicode `→` arrow (not ASCII `->`). A naive regex would capture backticks and miss the arrow. | Added a dedicated "`## Pull Requests` section markdown format" block under §12 with the exact shape, an explicit regex (`` ^\s*-\s+Branch:\s+`([^`]+)`\s+→\s+`([^`]+)` ``), and the rules for missing status markers and empty sections. |
+| W7-M5 | §13 Strategy 2 only defined "if unique match → use as head" — didn't say what happens for 0 matches (branch deleted after merge — common) or 2+ matches (multiple feature-branch revisions — also common; verified on real data). | Strategy 2 now spells out that 0 or 2+ matches fall through silently to Strategy 3; no user prompt at this level; any remaining unresolved PRs are aggregated and surfaced once via §15's "All PRs unresolved" row. |
+
+#### MINOR
+
+| # | Finding | Fix applied |
+|---|---|---|
+| W7-m1 | §3 Modified files listed `preload-context.*` with a wildcard; only `preload-context.sh` exists, so the wildcard was confusing. | Replaced with `preload-context.sh`. |
+| W7-m2 | §16 Success criterion 1 required a passing test on every `/impl:code` run, contradicting the §4-specified "Skip tests" branch available when no test framework is detected. | Criterion 1 rewritten to acknowledge the Skip path as a valid alternative outcome, provided the skip decision is logged in the Phase 5 report with user-provided rationale. |
+| W7-m3 | §3 `impl.md` alias pattern said both "the drift risk is managed by the `KEEP IN SYNC` marker plus the CHANGELOG entry" **and** "CI should diff and fail on drift" — these are inconsistent, and no CI workflow is scoped in §3. | Dropped the "CI should" claim. Added a sentence noting CI enforcement is a plausible future enhancement but out of scope here. |
+| W7-m4 | §12 "Ignored by default" only mentioned lowercase `attachments/`, but real exports use both `attachments/` and `Attachments/` (case varies by item creation date). | Clarified "case-insensitive match (real exports use both spellings)". |
+| W7-m5 | §4 "Pre-Phase 3.5" heading placed the new test-baseline phase between Pre-Phase 3 (branch creation) and Phase 3A (implementation), but the `.5` suffix was ambiguous — could read as a sub-step of Pre-Phase 3 rather than its own phase. | Heading expanded to "Pre-Phase 3.5 (between Pre-Phase 3 and Phase 3A/3B): Capture test baseline" with a one-sentence clarification that the `.5` means "inserted between 3 and 4 of the existing ordering — its own phase". |
+
+#### NIT
+
+| # | Finding | Fix applied |
+|---|---|---|
+| W7-n1 | §17 out-of-scope used `bitbucket*` — looks like a shell glob but §13 defines it as a substring check on the hostname. | Rephrased to cite the §13 rule directly: "hostname contains the substring `bitbucket` and is not `bitbucket.org`". |
+| W7-n2 | §3 `impl-maintenance` update lists `/impl` as one of the Command-run values, but `/impl` is only an alias — the spec didn't say which value the handoff should record when the alias was used. | Added a sentence: when the alias is invoked, `Command run:` records `/impl:code` (the canonical workflow being executed); `/impl` is a transport detail, not a distinct workflow. |
+| W7-n3 | §12 `depth: full` step 2 used the same `<LINKED_KEY>/<LINKED_KEY>.md` path for the VI itself — not wrong (it resolves to the nested `<VI>/<VI>/<VI>.md`) but only obvious after inspecting a real export. | Added a parenthetical noting the nested path and confirming it's verified against real exports. |
+| W7-n4 | §§8–14 described agent Tools as prose (`**Tools:** Read, Glob, ...`), but existing in-repo agents use YAML arrays (`tools: ["Read", "Glob", ...]`). No existing agent has the prose form — implementers might reproduce the prose form verbatim. | Added a note just before §8 explaining that the prose Tools/Model lines are documentation shorthand; the actual agent frontmatter must use YAML arrays. The note also repeats the belt-and-braces Opus invocation pattern (`model: opus` in frontmatter **plus** `model: "opus"` on the caller's Agent call) for the two Opus agents in the new set (`doc-reviewer`, `epic-reviewer`), mirroring the existing `risk-planner` / `code-review` pattern. |
+
+### Final state after Wave 7
+
+- Reality-ground coverage: every agent input / output / invocation path was cross-checked against a real artifact (existing plugin code, real docs repo, real code repo, real Jira export).
+- No remaining known blockers, majors, or minors.
+- Spec still does not prescribe implementation details inside agents (e.g., exact Vale invocation, exact frontmatter merging logic) — these are correctly left to the implementation phase.
+- The 4 new agents plus the 6 pre-existing ones stay the total count — no additions or removals in wave 7, only clarifications and schema tightening.
+
+### Open items for implementation time (not blocking)
+
+- The `doc-planner` image-policy detection's classification rules ("count > 0 and negligible" thresholds) are deliberately qualitative. An implementation will pick concrete numeric thresholds (e.g., "≥ 3 of the 5 sampled pages"); this is an implementation detail not worth hardcoding in the spec.
+- The fallback chain for default-branch resolution (`origin/HEAD` → `remote set-head` retry → try `main` → try `master`) could be extended with `git config init.defaultBranch` if implementers see enough repos where that's the only signal; additive.
+- The hook regex's longest-match alternation relies on Bash `grep -E` / POSIX ERE alternation ordering. If implementers move the hook to a different matcher, they must verify `/impl:jira:docs` still binds before `/impl`.

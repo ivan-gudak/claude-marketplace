@@ -80,7 +80,7 @@ plugins/dev-workflows/
   agents/
     impl-maintenance.md   ← extend to recognise all /impl:* sub-commands (see §3 impl-maintenance update)
   hooks/
-    preload-context.*     ← extend to handle the new /impl:* variants (see §3 hook scope)
+    preload-context.sh    ← extend to handle the new /impl:* variants (see §3 hook scope)
   README.md               ← update command and agent tables
   CHANGELOG.md            ← add entry
 .claude-plugin/
@@ -107,14 +107,14 @@ The alias is implemented by **duplicating the full content** of `commands/impl/c
 <!-- /impl is a backward-compatible alias for /impl:code. -->
 <!-- For doc edits, use /impl:docs. For Jira-driven feature docs, use /impl:jira:docs. -->
 <!-- For writing child Epics, use /impl:jira:epics. -->
-<!-- Any change to impl/code.md MUST be reflected here verbatim; CI should diff and fail on drift. -->
+<!-- Any change to impl/code.md MUST be reflected here verbatim; the `KEEP IN SYNC` marker + a CHANGELOG note are the enforcement mechanism. -->
 
 Implement the following: $ARGUMENTS
 
 …(rest of the canonical /impl:code workflow copied verbatim)…
 ```
 
-**Why duplication, not runtime delegation:** Slash command files are not directly executable from inside another command. "Read file X and follow it as if it were this command's body" is fragile when plugin paths change. A verbatim duplicate is deterministic; the drift risk is managed by the `KEEP IN SYNC` marker plus the CHANGELOG entry noting the obligation.
+**Why duplication, not runtime delegation:** Slash command files are not directly executable from inside another command. "Read file X and follow it as if it were this command's body" is fragile when plugin paths change. A verbatim duplicate is deterministic; the drift risk is managed by the `KEEP IN SYNC` marker plus the CHANGELOG entry noting the obligation. Adding a CI diff-check is a plausible future enhancement but is out of scope for this change (no workflow files are touched in §3).
 
 ### Hook scope (`preload-context`)
 
@@ -130,6 +130,20 @@ The existing `preload-context` hook injects git context and a model-routing remi
 
 The hook should pattern-match against `/impl` and all `/impl:*` variants rather than each one literally, to avoid regressions when future sub-commands are added.
 
+**Normative regex** — the existing hook (`hooks/preload-context.sh`) uses
+
+```bash
+^/(impl|vuln|upgrade)[[:space:]]+[^[:space:]-]
+```
+
+which does **not** match `/impl:code foo` because the character after `impl` is `:`, not whitespace. Replace with:
+
+```bash
+^/(impl(:(code|docs|jira(:(docs|epics))?))?|vuln|upgrade)[[:space:]]+[^[:space:]-]
+```
+
+The longest-match alternation inside the `impl` group is deliberate — `/impl:jira:docs` must be recognised before the outer `/impl` fallback. After the match, the hook reads `$1` (the full command token, e.g. `impl:jira:docs`) and routes to the correct context-injection branch per the table above.
+
 ### `impl-maintenance` update
 
 Every command that runs Phase 4 (code) or Phase 8 (Jira) maintenance invokes `impl-maintenance` via the session-handoff block. After this split, the handoff block must include an explicit **`Command run:` field** so the agent's "Command workflow improvements" section can suggest changes against the right command variant:
@@ -143,6 +157,8 @@ The existing `agents/impl-maintenance.md` prompt must also be updated in two pla
 1. The **Inputs** section adds `Command run` to the expected session-handoff fields.
 2. The **"Command workflow improvements"** output sub-section, currently fixed to `"Command: [/impl | /vuln | /upgrade]"`, is broadened to `"Command: [/impl | /impl:code | /impl:docs | /impl:jira:docs | /impl:jira:epics | /vuln | /upgrade]"`.
 
+When a user invokes the backward-compatible `/impl` alias, the handoff's `Command run:` field must record `/impl:code` (the canonical workflow being executed) rather than `/impl` — the alias is a transport detail, not a distinct workflow variant. The fact that the alias was used can be noted in the Phase 5 report narrative if relevant.
+
 Without this update, maintenance suggestions from the three new Jira/docs commands would be labelled against the wrong command and silently misdirected.
 
 ---
@@ -151,9 +167,9 @@ Without this update, maintenance suggestions from the three new Jira/docs comman
 
 All existing phases from the current `impl.md` (which becomes `commands/impl/code.md` under the new directory layout — see §3) are preserved. Two insertions are made.
 
-### Insertion 1 — Pre-Phase 3.5: Capture test baseline
+### Insertion 1 — Pre-Phase 3.5 (between Pre-Phase 3 and Phase 3A/3B): Capture test baseline
 
-Placed **after** branch creation (Pre-Phase 3), **before** any file edits:
+Placed **after** branch creation (Pre-Phase 3), **before** any file edits. The `.5` numbering signals "inserted between step 3 and step 4 of the existing ordering" — it is its own phase, not a sub-step of Pre-Phase 3's branch-creation steps.
 
 ```
 → Agent (subagent_type: "dev-workflows:test-baseline"):
@@ -282,9 +298,9 @@ Ask (grouped where possible, `choices` arrays, last choice always `"Other… (de
   ```
   choices: ["No screenshots needed", "I'll provide screenshot paths (you'll be prompted)", "Cancel"]
   ```
-  If "provide paths", follow up with a free-text entry accepting any absolute filesystem path (vault, `/tmp`, home, the docs repo itself — the writer will copy them into the docs repo's idiomatic image location at Phase 6, alongside the target markdown page). Accept multiple paths (one per line or space-separated). Validate each exists and is an image by extension (`.png|.jpg|.jpeg|.gif|.svg|.webp`).
+  If "provide paths", follow up with a free-text entry accepting any absolute filesystem path (vault, `/tmp`, home, the docs repo itself). Accept multiple paths (one per line or space-separated). Validate each exists and is an image by extension (`.png|.jpg|.jpeg|.gif|.svg|.webp`). The downstream `doc-planner` agent at Phase 5.7 detects the repo's image policy (local-file vs. CDN-upload) and decides per screenshot whether the writer will copy it into the repo's idiomatic image location or stage it outside the repo for manual upload — see §10b `image_policy` and §6 Phase 6 "Place screenshots".
 
-Also detect and show: resolved cwd absolute path, write context (obsidian / git_repo / plain_dir — see Section 11), whether branching will happen, and the resolved `<repos_base>`.
+Also detect and show: resolved cwd absolute path, write context (`obsidian` / `docs_repo` / `non_docs_repo` / `plain_dir` — see Section 11), whether branching will happen, and the resolved `<repos_base>`.
 
 ### Phase 1.5 — Classify
 
@@ -371,16 +387,25 @@ For each target from the confirmed write-target list:
 - **Add or update** the `changelog:` field per the planner's checklist (append a new dated entry naming the Jira key and a 1-line change summary). Create the field if it doesn't exist on an extended page.
 - **Update other frontmatter fields** the planner flagged: `published` (creation date on new pages), `meta.generation`, `readtime` (estimate from word count), `tags` (merge — don't duplicate), `owners` (leave to the user to maintain).
 - **Reuse snippets** per the planner's checklist: if a snippet path is proposed, `include` it rather than inlining the content; if the planner recommends extracting new content into a snippet, create the snippet file in the repo's idiomatic `_snippets/` location and reference it from the page.
-- **Place screenshots**: copy each user-provided path into the idiomatic image location for the target page (usually `<page-dir>/img/` or `<page-dir>/images/` — detect from sibling pages). Reference them in markdown with the repo's preferred syntax.
+- **Place screenshots** per each target's `image_policy` from the `doc-planner` checklist:
+  - `local` → copy each user-provided `src` to the planner's `dest` path (typically `<page-dir>/img/` or the detected idiomatic directory). Reference the local path in markdown with the repo's preferred syntax (`![alt](./img/name.png)` or similar — match sibling pages).
+  - `cdn_upload_required` → **do NOT copy user-provided screenshots into the repo.** Stage them at the planner's `staging` path (`/tmp/<JIRA_KEY>-screenshots/`). In the markdown, insert a placeholder reference with a clearly marked TODO — for example `![alt text](TODO-upload-screenshot-to-image-manager)` or a commented-out block — so the reviewer sees the intent but the build does not silently ship a broken link. List every staged screenshot and its upload instructions in the Phase 9 `### Screenshots to upload manually` section.
+  - `ambiguous` → ask the user at this step, per target:
+    ```
+    choices: ["Use local path <page-dir>/img/ (Recommended if this repo uses local images)", "Stage for manual upload to the repo's image-management tool", "Skip this screenshot", "Other… (describe)"]
+    ```
+    Apply the chosen branch.
+  
+  This design is grounded in the reality that product-docs repos split along this line: some (e.g. Docusaurus-style with adjacent `img/` dirs) store images in-tree; others upload to an external CDN or Image Manager and reference via `https://` URLs with zero local image files — this second pattern was verified against a representative product-docs repo during design. The plugin cannot automate the upload step, so staging + explicit reporting is the correct handoff.
 - **Traceability**: every claim must cite the originating Jira key (e.g. `[[<JIRA_KEY>]]`) and/or PR URL inline. If the claim comes only from imported Jira content (no PR was resolved), cite the Jira key alone.
 
 Write to cwd (see Section 11 for branch/write policy).
 
 ### Phase 6.5 — Branch setup (conditional)
 
-Only when write context = `git_repo` AND user confirmed branching at plan approval. Never for `obsidian` or `plain_dir`.
+Only when write context = `docs_repo` (or `non_docs_repo` after user confirmation in Phase 0) AND user confirmed branching at plan approval. Never for `obsidian` or `plain_dir`.
 
-1. **Update the base branch.** Determine the base — default `main`; if the user picked a `release/*` branch earlier, use that. Run `git fetch origin` → `git switch <base> && git pull --ff-only`. If the fast-forward pull fails (local commits on base), escalate with `choices: ["Stash local changes and continue (Recommended)", "Proceed from current base state", "Cancel"]`.
+1. **Update the base branch.** Determine the base by running `git symbolic-ref --short refs/remotes/origin/HEAD` — this returns the remote's default branch (typically `main` or `master`; legacy repos frequently still use `master`). If that command fails (unset `origin/HEAD`), run `git remote set-head origin --auto` first and retry; if it still fails, fall back to trying `main`, then `master`, in that order. If the user picked a `release/*` branch earlier in Phase 1, use that instead of the default. Once the base is resolved, run `git fetch origin` → `git switch <base> && git pull --ff-only`. If the fast-forward pull fails (local commits on base), escalate with `choices: ["Stash local changes and continue (Recommended)", "Proceed from current base state", "Cancel"]`.
 2. **Clean-tree check.** Run `git status --porcelain`; if non-empty, prompt `choices: ["Stash changes and continue (Recommended)", "Proceed anyway — pre-existing changes will appear in the diff", "Cancel"]`. Mirrors `commands/impl/code.md` Pre-Phase 3.
 3. **Derive branch name from repo conventions.** In priority order, look at repo root for `CONTRIBUTING.md`, `CONTRIBUTION.md`, `README.md`, `DOCUMENTATION-GUIDELINES.md`. Grep each for a branch-naming section (case-insensitive, patterns like `Branch name`, `Branch naming`, `naming your branch`). If a pattern like `<user>/<JIRA-KEY>-<slug>` or `<prefix>/<name>` is documented, derive the branch name by filling placeholders with known values (Jira key from Phase 0, slug from the feature summary, `<user>` from `git config user.name` or its initials). If multiple patterns are documented, offer them to the user.
 4. **Confirm the branch name with the user.** Always — even when derived from conventions — because initials and slugs are subjective:
@@ -421,6 +446,7 @@ Standard Phase 5 structure plus:
 - `### PRs in scope`
 - `### Output file(s)`
 - `### Doc review verdict`
+- `### Screenshots to upload manually` — populated only when any target used `image_policy: cdn_upload_required` (or the user selected "Stage for manual upload" under the `ambiguous` branch). For each staged screenshot: `src` (original user-provided path), `staging` path under `/tmp/<JIRA_KEY>-screenshots/`, the target page it belongs on, the proposed alt-text, and the `upload_note` from the planner. Omit this section entirely when no screenshots were staged.
 
 ### Invariants
 
@@ -546,6 +572,19 @@ Standard structure plus:
 
 ## 8. Agent: `test-writer.md`
 
+> **Note on agent frontmatter conventions (applies to §§8–14).** The `**Tools:**` and `**Model:**` lines in each agent spec below are documentation shorthand. The actual agent files placed in `plugins/dev-workflows/agents/` MUST use YAML frontmatter matching the existing in-repo style (see `agents/risk-planner.md`, `agents/code-review.md`, `agents/test-baseline.md`):
+>
+> ```yaml
+> ---
+> name: <agent-name>
+> description: <one-line description>
+> model: opus         # only for Opus agents; omit to inherit the session model
+> tools: ["Read", "Glob", "Grep", "LS", ...]   # YAML array, not prose
+> ---
+> ```
+>
+> Opus agents (in this spec: `doc-reviewer`, `epic-reviewer`) additionally receive `model: "opus"` on the `Agent` call from the caller command, mirroring the existing `/impl` → `risk-planner` / `code-review` invocation pattern. This belt-and-braces approach ensures Opus routing works regardless of whether user-level agent auto-discovery is active in the session.
+
 **Purpose:** Writes tests for new or changed behavior. Does NOT run tests.
 
 **Model:** inherits session (no `model:` override in frontmatter).
@@ -598,7 +637,7 @@ Standard structure plus:
 | Audience fit | End-user clarity; technical jargon explained or linked; commands copy-pasteable |
 | Structural integrity | Headings, links, `[[wikilinks]]` resolve; internal nav consistent |
 | YAML frontmatter | `changelog:` updated with the Jira key; other required fields per the repo's convention (e.g., `title`, `description`, `published`, `tags`) present on new pages |
-| Screenshots | Referenced where the planner flagged them; images resolve; alt-text present |
+| Screenshots | Referenced where the planner flagged them; for `image_policy: local` the referenced image files resolve on disk; for `image_policy: cdn_upload_required` a TODO placeholder is present and the Phase 9 `### Screenshots to upload manually` section lists the staged file; alt-text present in all cases |
 | Snippets | Reused where the planner proposed reuse; not needlessly inlined; new snippets (if any) follow repo conventions |
 | Actionability | Examples runnable; commands copyable verbatim; links resolve |
 | Source traceability | Claims cite Jira keys + PRs (or Jira keys alone when no PR was resolved) |
@@ -717,7 +756,16 @@ repo_root:              <absolute path>
    - Which `jira-reader` items and which diff summaries source each topic.
    - What YAML frontmatter updates are needed (new page vs. extended page; `changelog:` entry with the Jira key; `published`, `tags`, `readtime`, `meta.generation` when relevant — detect existing conventions by sampling 2–3 adjacent pages).
    - Whether existing snippets apply (grep `_snippets/` for topical matches); whether new content should be extracted into a snippet for reuse.
-   - Whether any provided screenshot belongs on this page; where to place it (typically `<page-dir>/img/` or `<page-dir>/images/`).
+   - **Detect the repo's image policy** (per target, or once per run if the policy is uniform across the repo). Sample 5–10 sibling pages under the target's folder and up to 3 ancestor folders; count markdown image references and classify each reference as:
+     - `local` — reference is a relative path resolving inside the repo (e.g. `./img/foo.png`, `../images/bar.jpg`, `<page-dir>/img/...`); a matching file exists on disk.
+     - `cdn` — reference is an absolute URL to an external host (e.g. `https://cdn.example.com/images/...`); no local file exists.
+     - `wikilink` — `![[name.png]]` Obsidian-style (unlikely in a docs repo but possible).
+     
+     Then pick the policy:
+     - If `local` count > 0 and `cdn` count is 0 (or negligible) → `image_policy: local` and identify the idiomatic directory (most common pattern across samples — typically `<page-dir>/img/` or `<page-dir>/images/`).
+     - If `cdn` count > 0 and `local` count is 0 (or negligible) → `image_policy: cdn_upload_required` — the writer must NOT copy user-provided screenshots into the repo; they are staged outside the repo and surfaced in the Phase 9 report for manual upload to the repo's image-management tool (e.g. CDN, Image Manager, CMS).
+     - Mixed or zero references → `image_policy: ambiguous` — the writer asks the user at Phase 6 which approach to use for this specific feature.
+   - Whether any provided screenshot belongs on this page; the destination depends on `image_policy` (see output schema below).
    - Which cross-links should point to/from this page (including internal nav / sidebar files if the repo uses them).
 2. Flag gaps the writer cannot fill from inputs alone (e.g., "feature requires a DB-migration note but no migration steps were found in Jira or diffs — user input needed").
 
@@ -737,10 +785,16 @@ checklist:
     snippets:
       reuse:   [<relative snippet path>]
       extract: [<description of content to extract + proposed snippet path>]
+    image_policy: local | cdn_upload_required | ambiguous
     screenshots:
-      - src:   <user-provided absolute path>
-        dest:  <path under <page-dir>/img/>
-        alt:   <proposed alt-text>
+      - src:         <user-provided absolute path>
+        # When image_policy == local:
+        dest:        <absolute path under <page-dir>/img/ or the detected idiomatic directory>
+        # When image_policy == cdn_upload_required:
+        staging:     <absolute path under /tmp/<JIRA_KEY>-screenshots/ — NOT inside the repo>
+        upload_note: <1-line instruction for the user, e.g. "Upload via <repo's image-management process>; replace placeholder URL in page">
+        # When image_policy == ambiguous: both dest and staging are null; the writer prompts the user at Phase 6.
+        alt:         <proposed alt-text>
     cross_links:
       from:  [<page paths that should link here>]
       to:    [<page paths this should link out to>]
@@ -759,7 +813,7 @@ gaps:
 
 **Tools:** Read, Glob, Grep, LS, Bash
 
-**Rationale:** Corporate style guides (Dynatrace, Microsoft, Google, etc.) are encoded as Vale style packages maintained by the docs team, not by this plugin. The docs repo references them via `.vale.ini` (`BasedOnStyles = …`). Re-encoding or crawling the corporate style-guide site would duplicate the canonical source and drift. Wrapping the repo's existing tooling guarantees the local check matches what CI will run on the PR.
+**Rationale:** Corporate style guides (Dynatrace, Microsoft, Google, and various organisation-specific variants) are encoded as Vale style packages maintained by each organisation's docs team, not by this plugin. The docs repo references them via `.vale.ini` (`BasedOnStyles = …`). Re-encoding or crawling the corporate style-guide site would duplicate the canonical source and drift. Wrapping the repo's existing tooling guarantees the local check matches what CI will run on the PR.
 
 **Inputs:**
 ```yaml
@@ -835,16 +889,25 @@ while [ "$dir" != "/" ]; do
   dir="$(dirname "$dir")"
 done
 
-# 2. Otherwise check git repo
+# 2. Otherwise check git repo + run docs-repo signal check (Phase 0)
 if [ -z "$context" ] && git rev-parse --show-toplevel >/dev/null 2>&1; then
-  # 2a. Look for docs-repo signals at git root
   repo_root=$(git rev-parse --show-toplevel)
-  context=git_repo   # baseline; Phase 0 then upgrades to docs_repo or confirms
+  # 2a. Apply the §6 Phase 0 signal set: .docstack/, mkdocs.yml,
+  #     docusaurus.config.js, antora.yml, .vale.ini, DOCUMENTATION-GUIDELINES.md,
+  #     any _snippets/ directory, or a package.json with a script matching
+  #     *:start, *:build, *:lint, docs:*.
+  if has_any_docs_signal "$repo_root"; then
+    context=docs_repo
+  else
+    context=non_docs_repo   # Phase 0 will prompt the user to confirm or cancel
+  fi
 fi
 
 # 3. Plain dir otherwise
 [ -z "$context" ] && context=plain_dir
 ```
+
+The four-state output (`obsidian`, `docs_repo`, `non_docs_repo`, `plain_dir`) maps 1:1 to the four rows of the context table above. A `non_docs_repo` result triggers the confirm/cancel prompt in §6 Phase 0 before the command proceeds; if the user confirms, the command then behaves as a `docs_repo` for the remainder of the run.
 
 When branching (docs git repo): see §6 Phase 6.5 for the full branch-setup procedure (fetch base, read CONTRIBUTION/README for naming conventions, confirm name). Fallback branch prefix when no convention is found: `docs/`.
 
@@ -872,12 +935,12 @@ depth:      full | vi-plus-epics | vi-only
 **Phase 0 — Validate `jira_key`.** Accept only `^[A-Z][A-Z0-9_]*-\d+$` (Jira key convention: uppercase letters / digits / underscores, a dash, digits). On mismatch, return `status: NOT_FOUND` with a clear message naming the invalid key — caller surfaces the Section 15 `Jira key dir not found` choices to the user.
 
 1. Read `<vault_path>/jira-products/<jira_key>/<jira_key>-index.md`. **Header validation:** the first data table in the file must have header row `| Key | Type | Status | Summary | Role |` exactly. If the header differs (e.g. Jira-to-Obsidian exporter changed its output format), return `status: EMPTY` with a message naming the mismatched columns — do **not** try to parse rows with an unknown schema. Document the assumed exporter version in the plugin README.
-2. If `depth: full` — for every linked item (including the root VI itself, which lives in its own sub-directory), read `<vault_path>/jira-products/<jira_key>/<LINKED_KEY>/<LINKED_KEY>.md`. Parse YAML frontmatter, extract the Description body, and collect PR URLs from the `## Pull Requests` section.
+2. If `depth: full` — for every linked item (including the root VI itself, which lives in its own sub-directory), read `<vault_path>/jira-products/<jira_key>/<LINKED_KEY>/<LINKED_KEY>.md`. For the VI itself, `<LINKED_KEY> == <jira_key>`, so the path resolves to `<vault_path>/jira-products/<jira_key>/<jira_key>/<jira_key>.md` (a nested same-named subdirectory — verified against real exports). Parse YAML frontmatter, extract the Description body, and collect PR URLs from the `## Pull Requests` section.
 3. If `depth: vi-plus-epics` — read the VI's own file at `<vault_path>/jira-products/<jira_key>/<jira_key>/<jira_key>.md` **plus** every Epic `.md` directly linked to the VI (filter the linked-items table to `type == Epic`). Skip Stories, Sub-tasks, Research, Request for Assistance. This gives Epic-writing workflows enough context to extract meaningful themes for `code-scanner` without reading the entire hierarchy.
 4. If `depth: vi-only` — read only the VI's own file at `<vault_path>/jira-products/<jira_key>/<jira_key>/<jira_key>.md` plus the index. Every linked item is nested under the root export directory; never look for `<vault_path>/jira-products/<LINKED_KEY>/<LINKED_KEY>.md` (that path does not exist).
 5. Extract capability themes (2–4 short bullets summarizing recurring topics) for use by `code-scanner`. Themes may be sparse for `depth: vi-only`; callers that need richer themes should request `vi-plus-epics` or `full`.
 
-**Ignored by default:** sibling `<KEY>-comments.md` files and `attachments/` sub-directories inside each item's folder. Rationale: comments and image attachments are occasionally useful for decision-history context but are noisy, rarely authoritative for user-facing docs, and easy to revisit manually when needed. Keeping them out of the default read path also keeps `jira-reader` fast on large VIs. No user-facing toggle is provided in this iteration.
+**Ignored by default:** sibling `<KEY>-comments.md` files and `attachments/` sub-directories (case-insensitive — real exports use both lowercase `attachments/` and capitalised `Attachments/` depending on when the Jira item was created) inside each item's folder. Rationale: comments and image attachments are occasionally useful for decision-history context but are noisy, rarely authoritative for user-facing docs, and easy to revisit manually when needed. Keeping them out of the default read path also keeps `jira-reader` fast on large VIs. No user-facing toggle is provided in this iteration.
 
 **PR URL formats to parse:**
 
@@ -897,6 +960,23 @@ Three host categories are recognised; anything else is recorded with `host: othe
   ```
 
 Also parse the `Branch:` line and status marker (`**MERGED**` / `**OPEN**` / `**DECLINED**`) — present in all three formats.
+
+**`## Pull Requests` section markdown format** — the Jira-to-Obsidian exporter emits each PR as a **two-line bulleted item**, top-level bullet followed by an indented child bullet for the branch:
+
+```markdown
+## Pull Requests
+
+- [<PR title>](<full PR URL>) **<STATUS>**
+  - Branch: `<from-branch>` → `<to-branch>`
+- [<next PR title>](<next PR URL>) **<STATUS>**
+  - Branch: `<from-branch>` → `<to-branch>`
+```
+
+Non-obvious details when writing the parser:
+
+- The branch names are **wrapped in backticks** and separated by ` → ` (Unicode U+2192 right arrow), **not** `->` ASCII. A regex like `Branch:\s*(\S+)\s*->\s*(\S+)` will capture the backticks and miss the Unicode arrow. Use: `` ^\s*-\s+Branch:\s+`([^`]+)`\s+→\s+`([^`]+)` ``.
+- The status marker is always the **last token on the title line**, separated from the URL by a space. No status marker → treat as `UNKNOWN`.
+- Empty or missing `## Pull Requests` section → `pull_requests: []` in the output, not an error.
 
 **Output (structured handoff):**
 ```yaml
@@ -989,7 +1069,7 @@ Before attempting any git operation, inspect `pr_refs[*].host` and route per-PR 
 The default Bitbucket Server clone does **not** fetch `refs/pull-requests/*/from` refs — so Strategy 1 below is an optimistic first attempt that rarely hits unless the user has pre-configured the extra refspec and run `git fetch` manually. **Strategies 2 and 3 are the real workhorse** for these hosts; treat Strategy 1 as best-effort and fall through silently when it misses.
 
 1. **Strategy 1 — Bitbucket Server PR refs (optimistic; usually absent).** Try `git rev-parse refs/pull-requests/<pr_id>/from`. If present, use as head; derive base via `git merge-base <target_branch> <head>`. If the ref does not exist (the default for a fresh clone), fall through to Strategy 2. Do **not** attempt to configure the refspec or fetch it at runtime — that is an explicit opt-in step for the user, not an automatic side effect. (On Bitbucket Cloud and GitHub clones these refs don't exist either — Strategy 1 simply no-ops and the resolver moves on.)
-2. **Strategy 2 — Branch search.** `git branch -a --list "*<pr_id>*"` and `git branch -a --list "*<issue_key>*"`. If unique match → use as head.
+2. **Strategy 2 — Branch search.** `git branch -a --list "*<pr_id>*"` and `git branch -a --list "*<issue_key>*"`. If **exactly one** branch matches → use as head. If **0 matches** (branch was deleted after merge — common for merged PRs) or **2+ matches** (multiple revisions of the feature branch, or overlapping issue keys) → fall through silently to Strategy 3. Do not prompt the user here — the per-PR result is decided by the strategy chain; any remaining unresolved PRs are aggregated and surfaced once via §15's "All PRs unresolved" row.
 3. **Strategy 3 — Merge-commit search.** `git log --all -E --grep="[Pp]ull[ _-]?[Rr]equest[ _-]?#?<pr_id>\b" -n 5` and `git log --all -E --grep="<title_keyword>" -n 5`. The primary pattern matches the merge-commit title format `Pull request #<PR_ID>: …` produced by both Bitbucket and GitHub (note the `#` separator — a previous draft used `pull[- ]request[- ]<pr_id>` which did not match). For a merge commit: head = `<commit>^2`, base = `<commit>^1`.
 4. **Strategy 4 — Cross-hierarchy Jira-key commit search (last resort).** Accept an optional `jira_keys_hierarchy` input (passed from the caller: the VI key + every key discovered by `jira-reader` — Epics, Stories, Sub-tasks, Research, RFA, Bugs). For each key, run `git log --all --grep="<key>" --oneline`. The matches are treated as "commits associated with this feature" rather than a specific reconstructed PR. Return every match's full diff (`git show --format= <sha>`) as a **separate per-PR entry** with `pr_id: <the PR's own id, best-effort>` and `resolved_via: jira_key_commits`. Annotate the `summary` explicitly: *"Diff reconstructed from commit <sha> matched on Jira key <key>; this may not correspond to the original PR content exactly."*
 
@@ -1060,7 +1140,7 @@ refresh:
 
 **Process:**
 1. Verify repo exists. If not → return `status: REPO_MISSING`.
-2. Prep step: `git status --porcelain` → if dirty and refresh is true → return `status: DIRTY_TREE`. If refresh is true: `git switch <default-branch>` then `git pull --ff-only`; if the fast-forward pull fails (non-fast-forward, network error, authentication, or any other git error) → return `status: REFRESH_BLOCKED` with a one-line reason.
+2. Prep step: `git status --porcelain` → if dirty and refresh is true → return `status: DIRTY_TREE`. If refresh is true: resolve the default branch via `git symbolic-ref --short refs/remotes/origin/HEAD` (if unset, run `git remote set-head origin --auto` first; if still unset, try `main` then `master`); then `git switch <default-branch>` followed by `git pull --ff-only`. If the fast-forward pull fails (non-fast-forward, network error, authentication, or any other git error) → return `status: REFRESH_BLOCKED` with a one-line reason. If default-branch resolution itself fails after all fallbacks → return `status: REFRESH_BLOCKED` with reason `cannot resolve default branch`.
 3. Scan — pure filesystem (`grep`/`glob`/`read`), no git involvement. For each theme: search by keywords, symbols, paths. Collect file paths and top-level symbols.
 4. Read head (~80 lines) of top candidate files per theme to characterize the capability.
 5. Classify each theme: `present` (clear existing implementation), `partial` (related but incomplete), `absent` (gap).
@@ -1109,7 +1189,7 @@ gap_summary: |
 
 ## 16. Success criteria
 
-1. `/impl:code` on a code change produces a passing test for the new behavior before marking done.
+1. `/impl:code` on a code change produces a passing test for the new behavior before marking done — or, if no test framework is detected and the user explicitly selected the "Skip tests" path in Phase 3.5, the skip decision is logged in the Phase 5 report with the user-provided rationale.
 2. `/impl:docs` on a simple doc change does not trigger tests, branching, or code review.
 3. `/impl:jira:docs` on a VI key reads the vault markdown, summarizes merged PR diffs from local repos, writes traceable documentation, and passes doc-reviewer.
 4. `/impl:jira:epics` on a VI key reads the vault markdown, scans code repos for reuse/gaps, writes child Epic drafts to `$VAULT_PATH/jira-drafts/<VI-KEY>/` with testable acceptance criteria, and passes `epic-reviewer`.
@@ -1128,7 +1208,7 @@ gap_summary: |
 - Rewriting Jira items (jira-reader is read-only)
 - Re-crawling / re-encoding external style-guide URLs (the docs-style-checker wraps the repo's existing Vale/lint tooling, which is the canonical source — see §10c rationale)
 - Cloning missing repos (escalate to user instead)
-- Git hosts whose hostname does not match `github.com`, `bitbucket.org`, or a `bitbucket*` pattern (treated as `other` → `unresolved`; add a resolver in a future iteration)
+- Git hosts whose hostname does not match `github.com`, `bitbucket.org`, or the self-hosted Bitbucket Server rule from §13 (hostname contains the substring `bitbucket` and is not `bitbucket.org`) — treated as `other` → `unresolved`; add a resolver in a future iteration
 - Running `/impl:jira:docs` outside a docs repo (Phase 0 detects and asks the user to confirm or cancel)
 - Running `/impl:jira:epics` outside the Obsidian vault (Phase 0 refuses; vault git management remains the user's responsibility)
 - Changes outside `plugins/dev-workflows` (flag before touching)
