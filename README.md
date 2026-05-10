@@ -6,11 +6,8 @@ Ivan Gudak's private Claude Code plugin marketplace.
 
 | Plugin | Description |
 |--------|-------------|
-| [dev-workflows](plugins/dev-workflows/) | `/impl`, `/vuln`, `/upgrade` commands with Opus-backed planning, code review, and security-remediation workflows |
-| [engineering-practices](plugins/engineering-practices/) | Skills for TDD, architecture improvement, disciplined debugging, and design grilling |
+| [dev-workflows](plugins/dev-workflows/) | `/impl` (dispatcher), `/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics`, `/vuln`, `/upgrade` — Opus-backed planning, code review, product-docs review, Epic review, vulnerability remediation, dependency upgrades |
 | [obsidian-llm-wiki](plugins/obsidian-llm-wiki/) | Seven slash commands for compiling Obsidian vault knowledge into a persistent, cross-referenced wiki; supports Claude Code and GitHub Copilot |
-| [productivity](plugins/productivity/) | Caveman compressed-communication mode and write-a-skill for authoring new skills |
-| [planning](plugins/planning/) | Discovery interviews and pre-mortem risk analysis for pre-implementation planning |
 
 ## Installation
 
@@ -24,9 +21,7 @@ claude plugin marketplace add ivan-gudak/ihudak-claude-plugins
 
 ```bash
 claude plugin install dev-workflows@ihudak-plugins
-claude plugin install engineering-practices@ihudak-plugins
-claude plugin install productivity@ihudak-plugins
-claude plugin install planning@ihudak-plugins
+claude plugin install obsidian-llm-wiki@ihudak-plugins
 ```
 
 ### 3. Update after new releases

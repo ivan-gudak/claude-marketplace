@@ -1,9 +1,0 @@
-{
-  "name": "productivity",
-  "version": "1.0.0",
-  "description": "Productivity skills: caveman ultra-compressed communication mode, and write-a-skill for authoring new skills",
-  "author": {
-    "name": "Ivan Gudak",
-    "email": "ivan.gudak@dynatrace.com"
-  }
-}
