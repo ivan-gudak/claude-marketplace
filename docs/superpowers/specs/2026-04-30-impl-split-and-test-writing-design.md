@@ -648,7 +648,7 @@ diff_highlights:   <optional: key filenames/areas from code-diff-summarizer outp
 ```
 
 **Process:**
-1. Detect the docs tree root(s) — likely subdirectories: `dynatrace/`, `managed/`, `docs/`, `content/`, `site/` — whichever contain the majority of `.md` files with frontmatter.
+1. Detect the docs tree root(s) — likely subdirectories: `docs/`, `content/`, `site/`, `website/`, `handbook/`, `guide/` — whichever contain the majority of `.md` files with frontmatter. Product docs repos often use product-flavoured names (e.g. a top-level directory per product variant); the agent discovers these by content-weight rather than relying on a fixed list.
 2. Build a lightweight topical index: for each markdown page, read the frontmatter (`title`, `description`, `tags`) + H1/H2 headings (first 50 lines).
 3. Score candidates by keyword overlap with `feature_summary` and `diff_highlights`.
 4. Distinguish three placement kinds:
@@ -748,7 +748,7 @@ files:     [<absolute paths of files written in Phase 6>]
 
 **Process (priority order — first match wins):**
 1. **Vale via `.vale.ini`** — if `<repo_root>/.vale.ini` exists, run `vale --output=JSON <files>` from the repo root. Parse the JSON output into finding records.
-2. **Project-specific lint script** — if `package.json` has a script matching `*:lint` that covers markdown (e.g., `managed:lint`, `dynatrace:lint`, `docs:lint`), run it on the repo. Parse stderr/stdout for line-level violations. If the script lints the whole tree, filter violations to the target files.
+2. **Project-specific lint script** — if `package.json` has a script matching `*:lint` or `lint:*` that covers markdown (e.g., `docs:lint`, `site:lint`, `lint:md`, or any repo-local convention), run it on the repo. Parse stderr/stdout for line-level violations. If the script lints the whole tree, filter violations to the target files.
 3. **Generic markdown linter** — if `.markdownlint.json(c)` or `.remarkrc*` exists and the binary is available, run it on the target files.
 4. **Nothing configured** → return `status: NOT_CONFIGURED` with empty violations.
 
@@ -756,7 +756,7 @@ Each violation is normalised into:
 ```yaml
 file:     <absolute path>
 line:     <line number>
-rule:     <linter rule identifier, e.g. "Dynatrace.Acronyms">
+rule:     <linter rule identifier, e.g. "Microsoft.Acronyms" (from the public Vale Microsoft style) or "<ProjectStyle>.<RuleName>" for a project-local package>
 severity: BLOCKER | MAJOR | MINOR | NIT      # map from linter severity: error→MAJOR, warning→MINOR, suggestion→NIT
 message:  <human-readable description>
 suggestion: <linter's proposed fix, if any>
@@ -920,7 +920,7 @@ themes:
 
 **Inputs:**
 ```yaml
-repo_path:   <absolute, e.g. /repos/cluster>
+repo_path:   <absolute, e.g. /repos/<repo-name>>
 pr_refs:
   - url:         <full PR URL>
     host:        github_cloud | bitbucket_cloud | bitbucket_server | other
@@ -1021,9 +1021,9 @@ aggregate_summary: |
 
 **Inputs:**
 ```yaml
-repo_path:   <absolute, e.g. /repos/cluster>
+repo_path:   <absolute, e.g. /repos/<repo-name>>
 capability_themes:
-  - <short phrase, e.g. "ActiveGate auto-update windows">
+  - <short phrase, e.g. "Auto-update scheduling" or "Config UI for rate limits">
 context: |
   <3–5 sentences: VI goal, what the Epic-set is meant to achieve>
 search_hints:

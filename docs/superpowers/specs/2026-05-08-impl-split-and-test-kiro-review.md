@@ -67,7 +67,7 @@ Section 13, `code-diff-summarizer`, Strategy 1 says:
 
 > Try `git rev-parse refs/pull-requests/<pr_id>/from`. If present, use as head.
 
-I verified on `/repos/cluster`: `refs/pull-requests/*/from` refs **do not exist** by default. Bitbucket Server exposes them, but they're only in the local clone if the user has added a custom refspec (`refs/pull-requests/*/from:refs/remotes/origin/pr/*`) and fetched. Running the command fatal-errors with `unknown revision`.
+I verified on a representative self-hosted Bitbucket Server clone: `refs/pull-requests/*/from` refs **do not exist** by default. Bitbucket Server exposes them, but they're only in the local clone if the user has added a custom refspec (`refs/pull-requests/*/from:refs/remotes/origin/pr/*`) and fetched. Running the command fatal-errors with `unknown revision`.
 
 **Impact:** Strategy 1 will always return "not present" on a fresh clone → silent fall-through to Strategy 2. Not catastrophic but the spec sells this as the primary path, and nobody will understand why it never hits.
 
@@ -85,11 +85,11 @@ Section 13, Strategy 3 says:
 
 > `git log --all --grep="pull[- ]request[- ]<pr_id>" -n 5`
 
-Actual merge commit format on both `cluster` and `dynatrace-docs`:
+Actual merge commit format observed on two representative self-hosted Bitbucket Server repos used for grounding:
 
 ```
-Pull request #179969: MGD-1127 handle update windows...
-Pull request #184577: NOISSUE remove empty metadata...
+Pull request #12345: PROJ-1234 handle update windows...
+Pull request #12346: NOISSUE remove empty metadata...
 ```
 
 The separator is `#`, not `-` or space. The regex `pull[- ]request[- ]<pr_id>` won't match `Pull request #179969` (missing `#` in the pattern, and the `[- ]` between `request` and id is literal hyphen/space only — no `#`).
@@ -209,7 +209,7 @@ Both Phase 5 blocks say:
 
 > spawn one `code-diff-summarizer` instance per repo simultaneously (single Agent message, all in parallel).
 
-Claude Code has practical parallel-subagent limits (typically 4–5). A VI like PRODUCT-14902 could easily touch 5+ repos.
+Claude Code has practical parallel-subagent limits (typically 4–5). A realistically-sized VI could easily touch 5+ repos.
 
 **Fix (per Q5):** Cap parallelism at **4**. Spawn the first batch of up to 4 instances in a single message; wait for all to complete; then spawn the next batch. Document the cap and the batching pattern.
 
@@ -458,13 +458,13 @@ Q3 resolved to directory form (`commands/impl/code.md`), so the `:` in filenames
 
 ### n5. Bitbucket host hardcoding
 
-- **Status:** Fixed (2026-05-08)
+- **Status:** Fixed (2026-05-08) — subsequently generalised further in A1 below (this initial fix kept a single-host assumption; A1 removed all internal-hostname leakage).
 - **Spec section(s):** 12 (`jira-reader` URL formats), 13 (`code-diff-summarizer` resolver selection), 17 (out of scope + prerequisites)
-- **Resolution:** §12 now documents two recognised URL formats (Bitbucket + GitHub) with an explicit assumption about the Dynatrace Bitbucket host. §13 has a new "Resolver selection by host" table routing per-PR to Bitbucket local-git or GitHub `gh`-CLI paths; a new "GitHub resolver (via `gh` CLI)" subsection spells out the `gh pr view --json` → `git fetch` → `git diff` flow. §17 drops the old "Handling non-Bitbucket PR URL formats (deferred)" line, replaced with a narrower "Non-`bitbucket.lab.dynatrace.org` Bitbucket Server hosts, and Git hosts other than `github.com`". New "Environment prerequisites" subsection documents `gh auth login` and recommends the ihudak/ai-containers environment.
+- **Resolution:** §12 now documents two recognised URL formats (Bitbucket + GitHub) with an explicit assumption about the (then-unspecified) self-hosted Bitbucket Server host. §13 has a new "Resolver selection by host" table routing per-PR to Bitbucket local-git or GitHub `gh`-CLI paths; a new "GitHub resolver (via `gh` CLI)" subsection spells out the `gh pr view --json` → `git fetch` → `git diff` flow. §17 drops the old "Handling non-Bitbucket PR URL formats (deferred)" line, replaced with a narrower statement about non-target Bitbucket Server hosts and non-GitHub Git hosts. New "Environment prerequisites" subsection documents `gh auth login` and recommends the ihudak/ai-containers environment.
 
-PR URL hostname is hardcoded as `bitbucket.lab.dynatrace.org`. Section 17 defers non-Bitbucket formats, but this should be an explicit assumption.
+PR URL hostname was hardcoded to a single self-hosted Bitbucket Server instance. Section 17 deferred non-Bitbucket formats, but this needed to be an explicit assumption.
 
-**Fix:** Add an explicit assumption in Section 12/13: "PR URL resolution is tuned for `bitbucket.lab.dynatrace.org` (Dynatrace Bitbucket Server instance) and `github.com` (per Q10). Other hosts return `unresolved`." Update Section 17 to match.
+**Fix:** Add an explicit assumption in Section 12/13 that PR URL resolution is tuned for a specific Bitbucket Server instance and `github.com` (per Q10); other hosts return `unresolved`. Update Section 17 to match. *(Superseded by A1 — see below — which removed all internal hostnames in favour of host-category detection.)*
 
 ---
 
@@ -482,13 +482,13 @@ No mention of how to handle `<KEY>` values that are not valid directory names (u
 
 ## Post-review amendments
 
-### A1. Remove Dynatrace-specific Bitbucket host; generalise to host categories
+### A1. Remove internal-Bitbucket-Server host references; generalise to host categories
 
 - **Status:** Fixed (2026-05-08)
-- **Raised by:** User, after wave 3 review — open-source plugin must not embed an internal URL.
+- **Raised by:** User, after wave 3 review — open-source plugin must not embed internal hostnames.
 - **Spec section(s):** 6 Phase 4, 6 Invariants, 12 (URL formats + output schema), 13 (inputs + Resolver selection + local-git strategies + GitHub resolver), 17 (out-of-scope + prerequisites)
 - **Decisions:** Q11 (fallback = local-git), Q12' (defer Bitbucket Cloud CLI), Q13 (hostname contains `bitbucket` AND is not `bitbucket.org`).
-- **Resolution:** All 7 occurrences of `bitbucket.lab.dynatrace.org` removed from the design spec. Introduced a three-category host classification — `github_cloud`, `bitbucket_cloud`, `bitbucket_server` (opaque hostname match). Resolver selection now follows the unified rule "if cloud AND CLI available → use CLI; else → local-git fallback". GitHub continues to use `gh`; Bitbucket Cloud has no CLI adopted this iteration (verified against Atlassian ACLI v1.3.15 — `acli` does not yet cover Bitbucket), so Bitbucket Cloud falls back to local-git strategies alongside self-hosted Bitbucket Server. §17 documents the deferral and leaves a clean extension point for a future Bitbucket CLI. The §6 invariant and §17 out-of-scope list both rephrased to drop any specific Bitbucket domain.
+- **Resolution:** All hardcoded references to a single internal Bitbucket Server hostname (7 occurrences) were removed from the design spec. Introduced a three-category host classification — `github_cloud`, `bitbucket_cloud`, `bitbucket_server` (opaque hostname match). Resolver selection now follows the unified rule "if cloud AND CLI available → use CLI; else → local-git fallback". GitHub continues to use `gh`; Bitbucket Cloud has no CLI adopted this iteration (verified against Atlassian ACLI v1.3.15 — `acli` does not yet cover Bitbucket), so Bitbucket Cloud falls back to local-git strategies alongside self-hosted Bitbucket Server. §17 documents the deferral and leaves a clean extension point for a future Bitbucket CLI. The §6 invariant and §17 out-of-scope list both rephrased to drop any specific Bitbucket domain.
 
 ---
 
@@ -519,16 +519,17 @@ No mention of how to handle `<KEY>` values that are not valid directory names (u
 | Q28 | Aggregate unresolved-PRs gate | Add. §15 now has a separate row for "All PRs across all repos unresolved" → single aggregate prompt `["Proceed with Jira-only content (Recommended)", "Review candidates one by one", "Cancel"]`. |
 | Q29 | Role clarification between the two Jira commands | Add a 1-sentence note in §2 distinguishing tech-writer role (`/impl:jira:docs`) from PM/PO role (`/impl:jira:epics`). |
 
-### Grounding (verified against `/repos/dynatrace-docs` on 2026-05-10)
+### Grounding (verified on 2026-05-10 against a representative product docs repo)
 
-Real-world signals confirmed before applying:
-- **yarn + nx build** — `package.json` contains `dynatrace:build`, `managed:build`, `*:lint`, `*:start`. Confirms the docs-repo detection signal set.
-- **Vale config present** — `.vale.ini` with `BasedOnStyles = Dynatrace, Microsoft`; `.vale/styles/` directory exists. Confirms Q25 choice to wrap Vale rather than re-crawl the style guide.
-- **Snippets convention** — `dynatrace/_snippets/`, `managed/_snippets/`, `.docstack/sources/*/_snippets/`. Confirms the `doc-planner` snippets-reuse output shape.
-- **YAML frontmatter with `changelog:`** — verified in `managed/_content/dynatrace-intelligence/anomaly-detection/index.md` (incl. `postid`, `legacyids`, `title`, `description`, `published`, `meta`, `changelog`, `readtime`, `tags`, `owners`, `userintention`, `order`). Confirms Q20's frontmatter handling scope.
-- **CONTRIBUTION.md branch-name guidance** — confirmed at lines 50–55 with explicit patterns `<your-name-or-initials>/<JIRA-ISSUE-KEY>-<short-branch-name>` and `<…>/noissue-<short-branch-name>`. Confirms Q15's read-CONTRIBUTION approach.
-- **DOCUMENTATION-GUIDELINES.md** (22 KB) — exists as an additional in-repo style source; `docs-style-checker` can use it as a signal for docs-repo detection.
-- **Vault path layout** — `$VAULT_PATH=/obsidian` with `.obsidian/` at root, `jira-products/` containing `PRODUCT-14902/` and `export-index.md`. Confirms `/impl:jira:epics` vault-only enforcement is feasible.
+Before applying the changes, the proposed design signals were verified against a real Docusaurus/Nx-style product docs repository to make sure the heuristics would actually fire:
+
+- **yarn + nx build** — `package.json` contains product-flavoured scripts matching `*:build`, `*:lint`, `*:start`, plus a `setup` script that wires yarn workspaces and nx. Confirms the docs-repo detection signal set.
+- **Vale config present** — `.vale.ini` with `BasedOnStyles = <ProjectStyle>, Microsoft`; `.vale/styles/` directory exists. Confirms Q25 choice to wrap Vale rather than re-crawl the style guide.
+- **Snippets convention** — `<product>/_snippets/`, `<variant>/_snippets/`, `.docstack/sources/*/_snippets/` directories exist. Confirms the `doc-planner` snippets-reuse output shape.
+- **YAML frontmatter with `changelog:`** — verified on a representative page; typical frontmatter fields are `postid`, `legacyids`, `title`, `description`, `published`, `meta`, `changelog`, `readtime`, `tags`, `owners`, `userintention`, `order`. Confirms Q20's frontmatter handling scope.
+- **CONTRIBUTION.md branch-name guidance** — confirmed that the repo documents explicit patterns like `<initials>/<JIRA-KEY>-<short-slug>` and a no-issue variant. Confirms Q15's read-CONTRIBUTION approach.
+- **DOCUMENTATION-GUIDELINES.md** — present as an additional in-repo style source; `docs-style-checker` can use it as a signal for docs-repo detection.
+- **Vault path layout** — `$VAULT_PATH` has `.obsidian/` at the root and `jira-products/` containing one VI sub-directory plus an `export-index.md`. Confirms `/impl:jira:epics` vault-only enforcement is feasible.
 
 ### Amendments applied to the spec
 
@@ -566,4 +567,4 @@ For completeness — these are strong points worth preserving:
 - Read-only constraints on `jira-products/` and `_archive/` prevent accidental corruption of the export artifacts.
 - Reuse of existing `test-baseline` and Phase 4 maintenance agents across commands is good design hygiene.
 - Escalation table (Section 15) covers the realistic failure modes.
-- Parallel `code-diff-summarizer` / `code-scanner` design maps well to the real data (PRODUCT-14902 spans 2+ repos).
+- Parallel `code-diff-summarizer` / `code-scanner` design maps well to the real data (the test VI we used for grounding spans 2+ repos).
