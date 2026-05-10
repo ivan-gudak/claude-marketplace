@@ -6,13 +6,13 @@ Five Claude Code slash commands for structured implementation, one-shot doc edit
 
 | Command | Description |
 |---------|-------------|
-| `/impl <description>` | Backward-compatible alias for `/impl:code`. Same workflow, same output. |
+| `/impl [args]` | Help / dispatcher — prints a summary of the `/impl:*` variants plus `/vuln` / `/upgrade` under "Related commands", then stops. Does NOT run any workflow. If you land here from muscle memory, re-invoke with the right variant. |
 | `/impl:code <description>` | Structured code implementation: classify → plan (Opus for SIGNIFICANT / HIGH-RISK) → branch → capture test baseline → implement → write and verify tests → Opus review → verify baseline → document. |
 | `/impl:docs <description>` | One-shot doc editing (single-file additions, README tweaks, Obsidian notes, formatting). No branch, no tests, no code review, no commit. Always SIMPLE or MODERATE. |
 | `/impl:jira:docs <VI-KEY>` | Jira-driven feature documentation. Reads the pre-exported Jira hierarchy from the vault, resolves PR URLs to local repos, runs parallel PR-diff summaries, synthesises docs, runs `docs-style-checker` + Opus `doc-reviewer` gates, writes into the current docs repo. |
 | `/impl:jira:epics <VI-KEY>` | Jira-driven Epic drafting. Reads the Value Increment + its existing Epics, optionally scans code repos for reusable capabilities and gaps, drafts one markdown file per new Epic under the vault, gated by Opus `epic-reviewer`. Never branches or commits. |
 
-All five commands classify tasks as SIMPLE / MODERATE / SIGNIFICANT / HIGH-RISK before acting. The three code-oriented commands (`/impl:code`, `/vuln`, `/upgrade`) also:
+All four `/impl:*` workflow commands classify tasks as SIMPLE / MODERATE / SIGNIFICANT / HIGH-RISK before acting (the `/impl` dispatcher does not — it prints help and stops). The three code-oriented commands (`/impl:code`, `/vuln`, `/upgrade`) also:
 - Create a feature branch before touching any file
 - Route SIGNIFICANT / HIGH-RISK work through Opus for planning and post-implementation review
 - Gate the test run on the review verdict (no tests until BLOCK is cleared)
@@ -58,7 +58,7 @@ Opus gates (`risk-planner`, `code-review`, `doc-reviewer`, `epic-reviewer`) decl
 | Hook | Trigger | Description |
 |------|---------|-------------|
 | `notify-done` | Stop | Desktop notification when Claude Code finishes a turn. |
-| `preload-context` | UserPromptSubmit | Matches `/impl`, `/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics`, `/vuln`, `/upgrade` (with at least one non-flag argument), then routes per spec §3: full git context + model-routing reminder for `/impl`, `/impl:code`, `/vuln`, `/upgrade`; `$VAULT_PATH` + `<repos_base>` + git branch (only if cwd is a git repo) for the two `/impl:jira:*` commands; silent pass-through for `/impl:docs`. |
+| `preload-context` | UserPromptSubmit | Matches `/impl`, `/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics`, `/vuln`, `/upgrade` (with at least one non-flag argument), then routes: full git context + model-routing reminder for `/impl:code`, `/vuln`, `/upgrade`; `$VAULT_PATH` + `<repos_base>` + git branch (only if cwd is a git repo) for the two `/impl:jira:*` commands; silent pass-through for `/impl` (dispatcher only) and `/impl:docs` (user manages git manually). |
 | `test-notify` | PostToolUse:Bash | Parses test-command output and sends a desktop notification with pass/fail counts. |
 
 ## Environment prerequisites

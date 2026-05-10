@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Fires on every message submission. Matches /impl, /impl:code, /impl:docs,
 # /impl:jira:docs, /impl:jira:epics, /vuln, /upgrade and routes per spec §3:
-#   • /impl, /impl:code, /vuln, /upgrade → full (model-routing + git status +
-#     recent commits + small-repo directory listing)
+#   • /impl:code, /vuln, /upgrade       → full (model-routing + git status +
+#                                         recent commits + small-repo directory listing)
 #   • /impl:jira:docs, /impl:jira:epics → $VAULT_PATH + <repos_base> default
-#     + git branch only if cwd is inside a git repo (no model-routing,
-#     no full status/log, no directory listing)
-#   • /impl:docs → silent (user manages git manually; model-routing not triggered)
+#                                         + git branch only if cwd is inside
+#                                         a git repo (no model-routing,
+#                                         no full status/log, no directory listing)
+#   • /impl                             → silent (dispatcher / help-only; as of 1.1.0
+#                                         /impl does not execute any workflow)
+#   • /impl:docs                        → silent (user manages git manually;
+#                                         model-routing not triggered)
 #
 # Exits immediately (near-zero overhead) if the message doesn't match.
 # Always exits 0 — must never block Claude.
@@ -73,8 +77,10 @@ emit_dir_listing_if_small() {
 
 # --- per-command routing (spec §3 table) ---------------------------------
 case "$cmd" in
-    impl:docs)
-        # Silent — /impl:docs owns its git hygiene and never invokes Opus.
+    impl|impl:docs)
+        # Silent:
+        #   • /impl      — dispatcher (help-only); injected context would be noise.
+        #   • /impl:docs — owns its own git hygiene and never invokes Opus.
         exit 0
         ;;
     impl:jira*)
@@ -91,7 +97,7 @@ case "$cmd" in
         echo "repos_base: ${REPOS_BASE:-/repos} (default — the command will confirm or ask)"
         emit_git_branch_if_repo
         ;;
-    impl|impl:code|vuln|upgrade)
+    impl:code|vuln|upgrade)
         # Full — code / security / upgrade commands benefit from the full
         # git context plus the model-routing reminder.
         echo "=== Auto-injected project context ==="

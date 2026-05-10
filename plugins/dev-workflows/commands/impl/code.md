@@ -375,7 +375,7 @@ Then spawn all four agents. They are independent and can run in any order — sp
 > Then analyse this session and return a Lessons Learned report.
 >
 > Session handoff:
-> - Command run: /impl:code    (canonical workflow — use this value whether the user invoked /impl:code directly or the /impl alias; the alias is a transport detail, not a distinct workflow)
+> - Command run: /impl:code
 > - What was done: [one-paragraph summary of the implementation]
 > - Key events: [BLOCK reviews encountered and their reason, test regressions, workarounds, unexpected ambiguities — or 'none']
 > - Workarounds used: [manual steps not automated by the workflow — or 'none']
