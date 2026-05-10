@@ -536,7 +536,7 @@ Before applying the changes, the proposed design signals were verified against a
 | Section | Change |
 |---|---|
 | §2 | Added 1-sentence role clarification (Q29) |
-| §3 | Agent listing grew from 6 to 9 new agents: `test-writer`, `doc-reviewer`, `epic-reviewer`, `doc-fixer`, `doc-planner`, `doc-location-finder`, `docs-style-checker`, `jira-reader`, `code-diff-summarizer`, `code-scanner` |
+| §3 | Agent listing grew from 6 agents to 10 (4 new in this wave): existing `test-writer`, `doc-reviewer`, `doc-fixer`, `jira-reader`, `code-diff-summarizer`, `code-scanner`; new `epic-reviewer`, `doc-planner`, `doc-location-finder`, `docs-style-checker` |
 | §6 | Phase 0 gained docs-repo detection (Q14); Phase 1 gained screenshot prompt (Q21); new Phase 5.5 invokes `doc-location-finder` (Q16); new Phase 5.7 invokes `doc-planner` (Q17); Phase 6 rewritten with frontmatter/snippet/screenshot handling (Q20, Q21); Phase 6.5 enhanced with fetch-main + CONTRIBUTION parsing (Q15); new Phase 6.7 invokes `docs-style-checker` (Q25); Phase 7 product-docs-specific (Q18); invariants updated |
 | §7 | Phase 0 vault-required (Q22); Phase 1 default output `jira-drafts/<VI-KEY>/<slug>.md` with rationale (Q23); Phase 6.5 deleted (Q24); Phase 7 uses `epic-reviewer` (Q18); invariants rewritten |
 | §9 | Rewritten as product-docs-only reviewer (Q18) |

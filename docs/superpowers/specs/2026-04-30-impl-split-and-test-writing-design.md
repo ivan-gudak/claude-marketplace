@@ -170,7 +170,7 @@ Store the returned `## Test Baseline` block. If `Framework: not detected`, note 
 1. Invoke `test-writer` agent (Section 8).
 2. If `test-writer` returns `Framework: not detected`:
    ```
-   choices: ["Specify test command to use", "Skip tests for this run (document why in Phase 5 report)", "Cancel"]
+   choices: ["Specify test command to use", "Skip tests for this run (document why in the final report — Phase 5 of the inherited /impl:code workflow)", "Cancel"]
    ```
 3. Run linters/builds.
 4. Invoke `test-baseline` in verify mode against the captured baseline.
@@ -185,7 +185,7 @@ Store the returned `## Test Baseline` block. If `Framework: not detected`, note 
   - Invoke `test-writer` agent.
   - If `test-writer` returns `Framework: not detected`: **before** invoking Opus review, ask the user (mirrors the SIMPLE/MODERATE branch):
     ```
-    choices: ["Specify test command to use", "Skip tests for this run (document why in Phase 5 report)", "Cancel"]
+    choices: ["Specify test command to use", "Skip tests for this run (document why in the final report — Phase 5 of the inherited /impl:code workflow)", "Cancel"]
     ```
     This keeps the Opus-review input deterministic — the reviewer is never asked to reason about an unknown test strategy — and ensures the "Skip" decision is an explicit, logged choice.
 - **Step 5 diff** now includes test files → Opus reviews code and tests together (test adequacy is already a review dimension in `code-review.md`).
@@ -230,7 +230,7 @@ Make edits; run validation checks from plan; no test step; no git commit.
 
 ### Phase 4 and Phase 5
 
-All four Phase 4 maintenance agents run unchanged. Phase 5 report: no branch, no test results, no Opus review. Add `### Validation` section.
+All four Phase 4 maintenance agents run unchanged. Session-handoff sets `change_type: docs` (consistent with `/impl:jira:docs` and `/impl:jira:epics`). Phase 5 report: no branch, no test results, no Opus review. Add `### Validation` section.
 
 ### Invariants
 
@@ -306,7 +306,7 @@ From the `jira-reader` handoff `pull_requests` list:
    - **Cloud Bitbucket** — hostname `bitbucket.org`, URL shape `https://bitbucket.org/<WORKSPACE>/<REPO>/pull-requests/<PR_ID>` → extract `<REPO>`.
    - **Self-hosted Bitbucket Server** — hostname contains the substring `bitbucket` and is not `bitbucket.org`, URL shape `https://<host>/projects/<PROJECT>/repos/<REPO>/pull-requests/<PR_ID>` → extract `<REPO>`. The `<host>` is opaque to the resolver; it is only used for host classification.
    Any other host is recorded as `unresolved` with reason `unsupported host`.
-2. Filter by `status_marker` per Phase 1 setting (default: MERGED only).
+2. Filter by `status` per Phase 1 setting (default: MERGED only). This is the `pull_requests[].status` field on the `jira-reader` output (see §12 schema), not the top-level agent `status` field.
 3. For each unique repo, check `<repos_base>/<REPO>` exists using the path resolved at Phase 1.
 4. If any repos missing, escalate using the rules in Section 15 (choices include "Skip and continue without its PRs", "I'll clone it — wait", "Cancel", and "Re-resolve with a different `<repos_base>`"). List missing repos explicitly.
 
@@ -316,7 +316,7 @@ Spawn `code-diff-summarizer` instances **in batches of up to 4 concurrent agents
 
 Rationale: Claude Code's practical parallel-subagent limit is ~4–5; going above that causes silent serialisation or rate-limiting. Capping at 4 makes runtime deterministic and keeps handoff latency predictable.
 
-Handle `status: REPO_MISSING`, `DIRTY_TREE`, `REFRESH_BLOCKED`, `NO_PRS_RESOLVED`, or `PARTIAL` per Section 13 escalation rules.
+Handle `status: REPO_MISSING`, `DIRTY_TREE`, `REFRESH_BLOCKED`, `NO_PRS_RESOLVED`, or `PARTIAL` per Section 15 escalation rules.
 
 ### Phase 5.5 — Find documentation locations
 
@@ -324,12 +324,19 @@ Invoke `doc-location-finder` agent (see agent spec) with the docs-repo root, the
 
 Expected output: a list of recommended write targets, each annotated with `kind` (extend-existing | new-page-in-existing-section | new-section), `section` (e.g. "Setup", "How to use", "Reference"), absolute path, and 1-sentence rationale.
 
-Present the recommendations to the user with:
-```
-choices: ["Accept all proposed locations (Recommended)", "Adjust individual locations (you'll be prompted per item)", "Cancel"]
-```
+**Status handling:**
+- `status: OK` with a populated `targets` list → present to the user and ask:
+  ```
+  choices: ["Accept all proposed locations (Recommended)", "Adjust individual locations (you'll be prompted per item)", "Cancel"]
+  ```
+- `status: LOW_CONFIDENCE` → display the `confidence_notes` alongside the targets so the user sees what was ambiguous; present the same accept/adjust/cancel choices but change the default from "Accept all" to "Adjust individual locations".
+- `status: EMPTY` (no targets produced) → skip the accept/adjust flow and go straight to:
+  ```
+  choices: ["Specify locations manually (you'll be prompted)", "Cancel"]
+  ```
+  The manual-specify path takes a free-text entry per target (path + kind + section) and validates path existence for `extend-existing` targets.
 
-The confirmed list is the authoritative write-target set for Phase 6 and is handed to `doc-planner` in Phase 5.7.
+The confirmed target list (from any of the three paths above) is the authoritative write-target set for Phase 6 and is handed to `doc-planner` in Phase 5.7.
 
 ### Phase 5.7 — Plan the documentation
 
@@ -338,10 +345,22 @@ Invoke `doc-planner` agent (see agent spec) with:
 - per-repo diff summaries
 - confirmed write-target list from Phase 5.5
 - screenshot paths (if any) from Phase 1
+- `repo_root` (the docs-repo root resolved in Phase 0)
 
 Expected output: a `documentation checklist` — topics × locations, per-file YAML frontmatter updates (including `changelog:` entries), snippet reuse/extraction proposals, screenshot placement instructions, and cross-link needs. This checklist is what the Phase 6 writer follows and what `doc-reviewer` checks against in Phase 7.
 
-Present the checklist to the user for approval (`["Approve & write (Recommended)", "Adjust (describe)", "Cancel"]`).
+**Status handling:**
+- `status: OK`, `gaps: []` → proceed to approval.
+- `status: OK` or `PARTIAL` with `gaps` entries → for each gap, act on its `recommended_action`:
+  - `"ask user"` → prompt the user inline **before** showing the checklist-approval choice. Use a free-text prompt scoped to what the gap describes; feed the answer back to the planner (single re-invocation, no further loops). If the user declines to provide input, fall back to `"mark TODO in draft"` for that gap.
+  - `"mark TODO in draft"` → surface in the checklist display as a visible TODO; the writer will emit a `<!-- TODO: … -->` marker at Phase 6. Does not block approval.
+  - `"skip with note in final report"` → list in the checklist display; carry forward into Phase 9 `### Skipped items`. Does not block approval.
+- `status: PARTIAL` is presented to the user alongside the checklist so the approval decision is informed.
+
+Present the checklist (with any gaps + their dispositions) to the user for approval:
+```
+choices: ["Approve & write (Recommended)", "Adjust (describe)", "Cancel"]
+```
 
 ### Phase 6 — Write documentation
 
@@ -353,7 +372,7 @@ For each target from the confirmed write-target list:
 - **Update other frontmatter fields** the planner flagged: `published` (creation date on new pages), `meta.generation`, `readtime` (estimate from word count), `tags` (merge — don't duplicate), `owners` (leave to the user to maintain).
 - **Reuse snippets** per the planner's checklist: if a snippet path is proposed, `include` it rather than inlining the content; if the planner recommends extracting new content into a snippet, create the snippet file in the repo's idiomatic `_snippets/` location and reference it from the page.
 - **Place screenshots**: copy each user-provided path into the idiomatic image location for the target page (usually `<page-dir>/img/` or `<page-dir>/images/` — detect from sibling pages). Reference them in markdown with the repo's preferred syntax.
-- **Traceability**: every claim must cite the originating Jira key (`[[JIRA-1127]]`) and/or PR URL inline. If the claim comes only from imported Jira content (no PR was resolved), cite the Jira key alone.
+- **Traceability**: every claim must cite the originating Jira key (e.g. `[[<JIRA_KEY>]]`) and/or PR URL inline. If the claim comes only from imported Jira content (no PR was resolved), cite the Jira key alone.
 
 Write to cwd (see Section 11 for branch/write policy).
 
@@ -434,9 +453,9 @@ Given a Jira Value Increment key, reads the VI and its existing Epics, optionall
 1. Resolve `$VAULT_PATH` as in `/impl:jira:docs` Phase 0.1.
 2. **Require vault context.** This command writes Epic drafts into the user's Obsidian vault; running it outside the vault would produce files in the wrong place. Verify cwd is inside `$VAULT_PATH` (cwd starts with the resolved `$VAULT_PATH` prefix, case-sensitive). If not:
    ```
-   choices: ["Change to <VAULT_PATH> and retry (Recommended)", "Cancel"]
+   choices: ["Cancel and re-run after `cd <VAULT_PATH>`", "Cancel"]
    ```
-   "Change and retry" emits a `cd "$VAULT_PATH"` instruction for the user and cancels this run — the command cannot `cd` for the user safely across shells. Default = Cancel.
+   Both choices end the current run — the command cannot `cd` for the user safely across shells. The first choice emits a `cd "$VAULT_PATH"` instruction for the user to copy-paste. Default = Cancel.
 3. Resolve `<JIRA_KEY>` from `$ARGUMENTS`; validate `$VAULT_PATH/jira-products/<JIRA_KEY>/` exists. If not: stop with error.
 
 ### Phase 1 — Clarification
@@ -492,6 +511,8 @@ Write to the resolved output directory from Phase 1 (default `$VAULT_PATH/jira-d
 ### Phase 7 — Epic review gate
 
 Invoke `epic-reviewer` agent (see agent spec). This reviewer is Epic-specific — it focuses on acceptance-criteria testability, scope clarity, and non-duplication of existing Epics under the VI. Verdict handling is the same as `/impl:jira:docs` Phase 7 (BLOCK / PASS WITH RECOMMENDATIONS / PASS; cap 1 fix + 1 re-review). Fixes go through the shared `doc-fixer` agent.
+
+Unlike `/impl:jira:docs`, there is **no** `docs-style-checker` step preceding `epic-reviewer`. Epic drafts are vault-internal and not subject to product-docs prose linting; corporate style compliance matters at product-docs publication time, not at Epic scoping time.
 
 ### Phase 8 — Maintenance
 
@@ -1039,7 +1060,7 @@ refresh:
 
 **Process:**
 1. Verify repo exists. If not → return `status: REPO_MISSING`.
-2. Prep step: `git status --porcelain` → if dirty and refresh is true → return `status: DIRTY_TREE`. Switch to default branch + `git pull --ff-only` if configured.
+2. Prep step: `git status --porcelain` → if dirty and refresh is true → return `status: DIRTY_TREE`. If refresh is true: `git switch <default-branch>` then `git pull --ff-only`; if the fast-forward pull fails (non-fast-forward, network error, authentication, or any other git error) → return `status: REFRESH_BLOCKED` with a one-line reason.
 3. Scan — pure filesystem (`grep`/`glob`/`read`), no git involvement. For each theme: search by keywords, symbols, paths. Collect file paths and top-level symbols.
 4. Read head (~80 lines) of top candidate files per theme to characterize the capability.
 5. Classify each theme: `present` (clear existing implementation), `partial` (related but incomplete), `absent` (gap).
@@ -1076,11 +1097,12 @@ gap_summary: |
 | `$VAULT_PATH` unset | "Set to detected path (Recommended)", "Enter manually", "Cancel" |
 | Jira key dir not found | "Re-enter key", "Cancel" |
 | Repo missing under `/repos/` | "Skip and continue without its PRs", "I'll clone it — wait", "Cancel", "Use different /repos path" |
-| `git fetch` failed | "Continue with current local state", "Skip this repo", "Cancel" |
+| `git fetch` failed, `git pull --ff-only` refused, or any other refresh failure (status `REFRESH_BLOCKED` from `code-diff-summarizer` / `code-scanner`) | "Continue with current local state", "Skip this repo", "Cancel" |
+| Working tree dirty in a repo the agent tried to refresh (status `DIRTY_TREE`) | "Stash changes and retry this repo", "Skip this repo", "Cancel" |
 | `unresolved_prs` returned (some, not all) | "Show candidates and let me pick", "Skip this PR", "Skip this repo", "Cancel" |
 | **All PRs across all repos unresolved** after every strategy (incl. Strategy 4 cross-key grep) | `["Proceed with Jira-only content (Recommended — writer/planner draw from jira-reader output; final report notes missing PR content)", "Review candidates one by one", "Cancel"]`. Presented **once** as an aggregate gate rather than per-PR, to avoid N clicks on a big VI. If selected, the writer and planner run without any diff summaries and the Phase 9 report lists every skipped PR with its unresolved reason. |
 | Use case B with no repos derivable from index | "List repos to scan manually", "Proceed without code scan", "Cancel" |
-| `doc-reviewer` BLOCK after one fix cycle | For each unresolved BLOCKER, ask individually: `["Provide manual fix notes (you'll be prompted)", "Defer to a follow-up issue (record in Phase 9 report)", "Override and accept the finding", "Cancel the whole run"]`. "Cancel" aborts. "Override" records the override + rationale in the Phase 9 `### Deferred items` section. "Defer" records the finding there without an override flag. "Manual fix notes" lets the user type the fix text, which is then applied by `doc-fixer` in a bounded one-shot pass. |
+| `doc-reviewer` or `epic-reviewer` BLOCK after one fix cycle | For each unresolved BLOCKER, ask individually: `["Provide manual fix notes (you'll be prompted)", "Defer to a follow-up issue (record in Phase 9 report)", "Override and accept the finding", "Cancel the whole run"]`. "Cancel" aborts. "Override" records the override + rationale in the Phase 9 `### Deferred items` section. "Defer" records the finding there without an override flag (for `/impl:jira:epics`, "Defer" means the finding goes into an Epic-refinement note in the draft). "Manual fix notes" lets the user type the fix text, which is then applied by `doc-fixer` in a bounded one-shot pass. |
 | Output file already exists | "Write with -v2 suffix (Recommended — non-destructive)", "Append", "Overwrite", "Cancel" |
 
 ---
