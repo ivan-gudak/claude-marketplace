@@ -4,6 +4,8 @@
 **Review date:** 2026-05-08
 **Reviewer:** Kiro (AI)
 
+> **Superseded in part (2026-05-10):** Sections of this review that discuss the `/impl` **alias** mechanism (verbatim duplication of `commands/impl/code.md` into `commands/impl.md` guarded by a `<!-- KEEP IN SYNC -->` marker — e.g. entries Q3b, line 150, line 163, line 246, W7-m3) reflect the **pre-Increment-G** design. Increment G (2026-05-10) replaced the alias with a **help / dispatcher**; `commands/impl.md` no longer mirrors `commands/impl/code.md` and no KEEP IN SYNC marker exists in the shipped code. For the authoritative current design, see the **Design evolution** section at the top of the main spec document. This review remains accurate for every finding that is not specifically about the alias mechanism.
+
 ---
 
 ## Legend

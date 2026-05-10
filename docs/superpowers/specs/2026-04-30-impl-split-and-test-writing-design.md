@@ -1,8 +1,21 @@
 # Design: Split `/impl` — test-writing, docs, and Jira-driven workflows
 
-**Date:** 2026-04-30 (updated 2026-05-01)
+**Date:** 2026-04-30 (updated 2026-05-10)
 **Status:** Approved — ready for implementation
 **Scope:** `plugins/dev-workflows` only
+
+---
+
+## Design evolution
+
+One deliberate change of direction during implementation:
+
+- **`/impl` was originally specced as a backward-compatible alias** of `/impl:code` — implemented via a verbatim duplicate of `commands/impl/code.md` inside `commands/impl.md`, guarded by a `<!-- KEEP IN SYNC -->` marker. This shipped briefly inside 1.1.0 (Increment A).
+- **Increment G reversed that decision** and reshaped `/impl` as a **help / dispatcher**: `commands/impl.md` now prints a short help page listing the `/impl:*` variants plus `/vuln` / `/upgrade` under "Related commands", and stops. The verbatim-copy approach was removing a ~27 KB shadow of `commands/impl/code.md` — drift-prone the moment anyone edited one side and forgot the other. The final shape of 1.1.0 ships the dispatcher, not the alias.
+
+Everywhere below that this document talks about `/impl`, treat it as the dispatcher. The `/impl:code` workflow body is unchanged; only the trigger moved. 1.0.x muscle memory (`/impl <description>`) prints the dispatcher message pointing at `/impl:code <description>`.
+
+This is a **breaking change** relative to 1.0.x, documented in `plugins/dev-workflows/CHANGELOG.md` under the 1.1.0 `### Breaking changes` section.
 
 ---
 
@@ -23,7 +36,7 @@ Additionally, a third workflow is needed: Jira-driven documentation and Epic wri
 
 | Command | Purpose |
 |---|---|
-| `/impl` | Backward-compatible alias → `/impl:code` |
+| `/impl` | Help / dispatcher — prints a list of the `/impl:*` variants and `/vuln` / `/upgrade`, then stops. Does NOT execute any workflow. |
 | `/impl:code` | Full code workflow + test-writing phase (new) |
 | `/impl:docs` | One-shot doc editing (simple markdown, READMEs, Obsidian notes) |
 | `/impl:jira:docs` | Jira hierarchy + PR diffs → feature documentation |
@@ -74,7 +87,7 @@ plugins/dev-workflows/agents/
 ```
 plugins/dev-workflows/
   commands/
-    impl.md               ← alias notice + full body duplicated from impl/code.md (see §3 alias pattern)
+    impl.md               ← short dispatcher body (help-only; see §3 dispatcher pattern)
   .claude-plugin/
     plugin.json           ← register all new commands + introduce `version` field
   agents/
@@ -96,25 +109,40 @@ Neither `plugin.json` nor `marketplace.json` currently carry a `version` field �
 - Initial value: `"1.0.0"` (representing the pre-split state captured in git); this change bumps it to `"1.1.0"` (additive commands, no breaking changes to `/impl`).
 - Other plugins in the marketplace are not required to adopt versioning as part of this change but should follow the same convention when they next see substantive edits.
 
-### `impl.md` alias pattern
+### `impl.md` dispatcher pattern
 
-`/impl` must continue to work as it did before this change — i.e. users who invoke `/impl <description>` get the full code-workflow experience (what is now `/impl:code`).
+`/impl <description>` does **not** execute the code-implementation workflow. `commands/impl.md` is a short help body that prints the available `/impl:*` variants (plus `/vuln` / `/upgrade` under "Related commands") and stops. A user whose muscle memory is `/impl add a feature` is redirected to `/impl:code add a feature` via the printed message — no aliasing, no auto-delegation.
 
-The alias is implemented by **duplicating the full content** of `commands/impl/code.md` into `commands/impl.md`, prefixed with a short alias notice:
+The dispatcher file prompts the model to render a single help message, including whatever arguments the user passed, and then to stop without classifying, branching, invoking agents, or touching git. Typical file shape:
 
 ```markdown
-<!-- KEEP IN SYNC WITH commands/impl/code.md -->
-<!-- /impl is a backward-compatible alias for /impl:code. -->
-<!-- For doc edits, use /impl:docs. For Jira-driven feature docs, use /impl:jira:docs. -->
-<!-- For writing child Epics, use /impl:jira:epics. -->
-<!-- Any change to impl/code.md MUST be reflected here verbatim; the `KEEP IN SYNC` marker + a CHANGELOG note are the enforcement mechanism. -->
+`/impl` is a help / dispatcher command, not an implementation workflow. It never
+executes any implementation, does not branch, does not run tests, does not invoke
+agents, and does not touch git state.
 
-Implement the following: $ARGUMENTS
+Your task: print the message below to the user, interpolating $ARGUMENTS into the
+"You invoked" line… then stop.
 
-…(rest of the canonical /impl:code workflow copied verbatim)…
+---
+
+### Message to print
+
+…/impl:* variants table…
+…Related commands table (/vuln, /upgrade)…
+…Migration note for 1.0.x users pointing at /impl:code…
+
+---
+
+Do NOT proceed with any workflow. After printing the message above, stop.
 ```
 
-**Why duplication, not runtime delegation:** Slash command files are not directly executable from inside another command. "Read file X and follow it as if it were this command's body" is fragile when plugin paths change. A verbatim duplicate is deterministic; the drift risk is managed by the `KEEP IN SYNC` marker plus the CHANGELOG entry noting the obligation. Adding a CI diff-check is a plausible future enhancement but is out of scope for this change (no workflow files are touched in §3).
+**Why a printed redirect rather than a verbatim copy or runtime delegation:**
+
+- **Verbatim copy** (the initial Increment-A design) puts a ~27 KB shadow of `commands/impl/code.md` in `commands/impl.md` with a `<!-- KEEP IN SYNC -->` marker. The marker is a social-contract enforcement mechanism — i.e. not enforced. The moment anyone edits one side and forgets the other, the two commands diverge silently. The maintenance tax is paid on every edit to `impl/code.md`.
+- **Runtime delegation** ("read file X and follow it as if it were this command's body") is not a first-class Claude Code primitive; plugin paths change across installs, and the delegation semantics are undefined. Brittle.
+- **Printed redirect** (the Increment-G design, final) makes the failure mode loud instead of silent: a user whose muscle memory is wrong sees a one-screen help page with the right command to re-type. There is exactly one source of truth for the code workflow (`commands/impl/code.md`, registered as `/impl:code`). Maintenance burden is zero because the dispatcher has no workflow content to keep in sync.
+
+The cost of the printed-redirect design is the breaking change for 1.0.x users (`/impl <description>` no longer runs the workflow); this is accepted and documented in `plugins/dev-workflows/CHANGELOG.md` under 1.1.0 `### Breaking changes`.
 
 ### Hook scope (`preload-context`)
 
@@ -122,7 +150,7 @@ The existing `preload-context` hook injects git context and a model-routing remi
 
 | Command | Context injection |
 |---|---|
-| `/impl` (alias) | Full — same as `/impl:code` |
+| `/impl` (dispatcher) | **None** — dispatcher prints help and stops; injected context would be noise before the help screen |
 | `/impl:code` | Full — git context + model-routing reminder |
 | `/impl:docs` | **None** — user manages git manually; model-routing is not triggered |
 | `/impl:jira:docs` | `$VAULT_PATH` and `<repos_base>` (default `/repos`); git branch context **only if** cwd is inside a git repo |
@@ -154,12 +182,12 @@ Command run: /impl:code | /impl:docs | /impl:jira:docs | /impl:jira:epics
 
 The existing `agents/impl-maintenance.md` prompt must also be updated in two places:
 
-1. The **Inputs** section adds `Command run` to the expected session-handoff fields.
-2. The **"Command workflow improvements"** output sub-section, currently fixed to `"Command: [/impl | /vuln | /upgrade]"`, is broadened to `"Command: [/impl | /impl:code | /impl:docs | /impl:jira:docs | /impl:jira:epics | /vuln | /upgrade]"`.
+1. The **Inputs** section adds `Command run` to the expected session-handoff fields, listing the live values (`/impl:code`, `/impl:docs`, `/impl:jira:docs`, `/impl:jira:epics`, `/vuln`, `/upgrade`). The literal legacy value `/impl` is accepted on input (mapped to `/impl:code`) but not listed as a live option — see the Increment G note below.
+2. The **"Command workflow improvements"** output sub-section, currently fixed to `"Command: [/impl | /vuln | /upgrade]"`, is broadened to `"Command: [/impl:code | /impl:docs | /impl:jira:docs | /impl:jira:epics | /vuln | /upgrade]"` (no `/impl` in the live output enum — see the Increment G note below).
 
-When a user invokes the backward-compatible `/impl` alias, the handoff's `Command run:` field must record `/impl:code` (the canonical workflow being executed) rather than `/impl` — the alias is a transport detail, not a distinct workflow variant. The fact that the alias was used can be noted in the Phase 5 report narrative if relevant.
+As of Increment G, `/impl` no longer runs any workflow (it is a dispatcher that prints help and stops — see §3 dispatcher pattern), so no live workflow will pass `Command run: /impl` to `impl-maintenance`. For replay compatibility with archived 1.0.x handoffs that still carry the literal value `/impl`, `impl-maintenance` accepts it on input and internally maps it to `/impl:code`, with a note in the report's `### Session summary` so the caller notices the legacy value. Live output ("Command workflow improvements") omits `/impl` from its enum — the agent will never suggest improvements against a command that does not run a workflow.
 
-Without this update, maintenance suggestions from the three new Jira/docs commands would be labelled against the wrong command and silently misdirected.
+Without this routing discipline, maintenance suggestions from the three new Jira/docs commands would be labelled against the wrong command and silently misdirected.
 
 ---
 
@@ -1195,7 +1223,7 @@ gap_summary: |
 4. `/impl:jira:epics` on a VI key reads the vault markdown, scans code repos for reuse/gaps, writes child Epic drafts to `$VAULT_PATH/jira-drafts/<VI-KEY>/` with testable acceptance criteria, and passes `epic-reviewer`.
 5. All existing regression baseline behavior from the original `/impl` is preserved unchanged.
 6. All new/modified files follow existing `dev-workflows` plugin conventions.
-7. `/impl` continues to work without modification to existing invocations.
+7. `/impl <anything>` prints the dispatcher help page (listing the `/impl:*` variants plus `/vuln` / `/upgrade` under Related commands, with a migration note pointing 1.0.x muscle memory at `/impl:code <description>`) and stops without executing any workflow, without classifying, without branching, without invoking agents, and without touching git. This is a deliberate breaking change relative to 1.0.x; see the 1.1.0 `### Breaking changes` entry in `plugins/dev-workflows/CHANGELOG.md`.
 
 ---
 
