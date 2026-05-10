@@ -1,3 +1,10 @@
+<!-- KEEP IN SYNC WITH commands/impl/code.md -->
+<!-- /impl is a backward-compatible alias for /impl:code. -->
+<!-- For doc edits, use /impl:docs. -->
+<!-- For Jira-driven feature docs, use /impl:jira:docs. -->
+<!-- For writing child Epics, use /impl:jira:epics. -->
+<!-- Any change to impl/code.md MUST be reflected here verbatim. The KEEP IN SYNC marker + a CHANGELOG note are the enforcement mechanism; a future CI diff check is a plausible additive enhancement. -->
+
 Implement the following: $ARGUMENTS
 
 If the argument starts with `@`, treat it as a path to a markdown file. Resolve relative to the current working directory. Read its full content and use it as the description. Echo `📄 Reading prompt from \`<file>\`…` before proceeding. If the file cannot be read, stop and report the error immediately.
@@ -160,6 +167,24 @@ Before writing any file:
 
 ---
 
+## Pre-Phase 3.5 — Capture test baseline
+
+Placed **after** branch creation (Pre-Phase 3), **before** any file edits. The `.5` numbering signals "inserted between step 3 and step 4 of the existing ordering" — it is its own phase, not a sub-step of Pre-Phase 3's branch-creation steps.
+
+Invoke the `test-baseline` agent in capture mode:
+
+→ Agent (subagent_type: "general-purpose"):
+  > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
+  > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/test-baseline.md` if the
+  > install path is absent). Then run the agent in the following mode:
+  >
+  > Mode: capture
+  > Project root: [absolute path of the current working directory]"
+
+Store the returned `## Test Baseline` block verbatim — it will be passed to `test-baseline` again in verify mode at Phase 3.5 and to `test-writer` as the baseline snapshot. If `Framework: not detected`, note it in session memory but continue — Phase 3.5 will surface the missing-framework case to the user explicitly.
+
+---
+
 ## Phase 3A — Implementation (SIMPLE / MODERATE)
 
 **Implement immediately. Do NOT ask "Should I implement?" or any variation.**
@@ -169,9 +194,62 @@ Before writing any file:
 3. Follow existing code style and LF line endings
 4. Assume broad permissions; avoid unnecessary stops
 5. If a **new ambiguity** emerges mid-implementation: STOP, ask with choices (last: `"Other… (describe)"`), resume after answer
-6. After all changes: run relevant linters, builds, and tests; fix any failures caused by your changes
+6. **Run Phase 3.5 below** (test writing + regression verification) — do NOT run tests directly here; Phase 3.5 owns the lint/build/test sequence and the fix loop
 7. Verify the outcome matches the approved plan
 8. Proceed to Phase 4 (post-implementation maintenance).
+
+---
+
+## Phase 3.5 — Write and verify tests (SIMPLE / MODERATE)
+
+Runs after Phase 3A step 5 completes (all code changes written), before the outcome-verification step.
+
+1. **Invoke `test-writer` agent** (see `~/.claude/agents/test-writer.md` or `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/test-writer.md`):
+
+   → Agent (subagent_type: "general-purpose"):
+     > "Read and adopt the system prompt at `~/.claude/agents/test-writer.md`
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/test-writer.md` if absent).
+     > Then write tests for this brief:
+     >
+     > Task description: [substitute full description]
+     > Plan: [paste the approved Phase 2A plan]
+     > Diff: [paste `git add -N . && git diff` output so new files are included]
+     > Project root: [absolute path]
+     > Baseline: [paste the ## Test Baseline block captured in Pre-Phase 3.5]"
+
+2. **Handle `Framework: not detected`.** If the `test-writer` report shows `Framework: not detected`, ask the user:
+   ```
+   choices: ["Specify test command to use", "Skip tests for this run (document why in the final report — Phase 5 of the inherited /impl:code workflow)", "Cancel"]
+   ```
+   - **Specify test command** → take free-text, use it as the test runner for step 4 below; continue.
+   - **Skip tests** → take free-text rationale; record it in the Phase 5 `### Deferred items` section; skip steps 3–5 of Phase 3.5 and proceed to Phase 3A step 7 (Verify outcome).
+   - **Cancel** → stop and summarize.
+
+3. **Run linters and builds.** Use the project's standard lint/build commands as discovered in Phase 2A exploration. Do not run the full test suite here — that is step 4.
+
+4. **Invoke `test-baseline` in verify mode** against the baseline captured in Pre-Phase 3.5:
+
+   → Agent (subagent_type: "general-purpose"):
+     > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/test-baseline.md` if absent).
+     > Then run the agent in the following mode:
+     >
+     > Mode: verify
+     > Baseline: [paste the captured ## Test Baseline block]
+     > Project root: [absolute path]"
+
+5. **Fix loop** — if the verify report lists regressions or new failures:
+   - The **session model** (not a subagent) applies fixes. No `review-fixer`-style indirection is used here — the scope is narrow and the context is already fully in-session. Use the `test-baseline` verify report as the authoritative list of what broke.
+   - After each fix attempt, re-capture the diff (`git add -N . && git diff`) and re-run `test-baseline` in verify mode against the **original** baseline (never re-baseline mid-loop — a mid-loop re-baseline would silently absorb a regression as the new normal).
+   - Cap at **2 fix attempts**. If regressions remain after the second attempt, surface to the user:
+     ```
+     choices: ["Investigate further", "Accept regressions and proceed (document in Phase 5 report)", "Cancel"]
+     ```
+     - **Investigate further** → stop the automated loop; the session model diagnoses manually and re-runs verify when ready.
+     - **Accept regressions** → record each regression in the Phase 5 `### Deferred items` section with the user's rationale; proceed.
+     - **Cancel** → stop and summarize.
+
+Once Phase 3.5 returns (passed, skipped, or accepted-with-regressions), return to Phase 3A step 7 (Verify outcome).
 
 ---
 
@@ -183,7 +261,26 @@ Use the currently selected model or Sonnet for implementation itself. Opus is re
 2. Make precise, surgical changes — do not modify unrelated code
 3. Follow existing code style and LF line endings
 4. If a **new ambiguity** emerges mid-implementation: STOP, ask with choices (last: `"Other… (describe)"`), resume after answer
-5. After all changes are written: **DO NOT run tests yet.** Capture the diff and the project root. Use `git add -N . && git diff` — this includes intent-to-add untracked new files so the diff is never empty for implementations that only create new files. Also capture `git diff --stat` for the summary.
+4a. **Invoke `test-writer` agent** (inserted before diff capture so the Opus review sees code and tests together — test adequacy is already a review dimension in `code-review.md`):
+
+   → Agent (subagent_type: "general-purpose"):
+     > "Read and adopt the system prompt at `~/.claude/agents/test-writer.md`
+     > (fall back to `~/.claude/plugins/data/dev-workflows@ihudak-claude-plugins/agents/test-writer.md` if absent).
+     > Then write tests for this brief:
+     >
+     > Task description: [substitute full description]
+     > Plan: [paste the risk-planner plan approved in Phase 2B]
+     > Diff: [paste `git add -N . && git diff` output so new files are included]
+     > Project root: [absolute path]
+     > Baseline: [paste the ## Test Baseline block captured in Pre-Phase 3.5]"
+
+   If the `test-writer` report shows `Framework: not detected`, ask the user **before** invoking Opus review (mirrors the SIMPLE/MODERATE branch — keeps the Opus-review input deterministic):
+   ```
+   choices: ["Specify test command to use", "Skip tests for this run (document why in the final report — Phase 5 of the inherited /impl:code workflow)", "Cancel"]
+   ```
+   Record the choice. A "Skip" decision must be explicit and logged in the Phase 5 report.
+
+5. After all changes are written: **DO NOT run tests yet.** Capture the diff and the project root. Use `git add -N . && git diff` — this includes intent-to-add untracked new files so the diff is never empty for implementations that only create new files, and it now also includes the test files from step 4a. Also capture `git diff --stat` for the summary.
 6. **Opus code review** — spawn. As with Phase 2B, invoke `general-purpose` with
    an explicit `model: "opus"` override and a "read the system prompt from file"
    instruction so the routing works independently of agent auto-discovery.
@@ -218,11 +315,9 @@ Use the currently selected model or Sonnet for implementation itself. Opus is re
      > Severities to fix: BLOCKER and MAJOR"
 
    Wait for the fix report. Re-capture the diff after the fixer completes.
-8. Run relevant linters, builds, and tests.
-9. Fix any failures caused by your changes (current model or Sonnet).
-10. If fixes were applied, re-run tests. If the fixes were non-trivial and the reviewer was NOT down-classified in step 7, re-invoke the Opus review on the delta. If the reviewer WAS down-classified, skip the re-review.
-11. Verify the outcome matches the approved plan and the review verdict.
-12. Proceed to Phase 4.
+8. **Run Phase 3.5 (post-review).** After the review gate clears (non-BLOCK verdict), run the Phase 3.5 sequence (lint/build, `test-baseline` verify, fix loop) — **not before**. This preserves the invariant "NEVER run tests for SIGNIFICANT / HIGH-RISK before Opus review returns non-BLOCK". The fix loop inside Phase 3.5 applies fixes via the session model; if the fixes are non-trivial **and** the reviewer was NOT down-classified in step 7, re-invoke the Opus code review on the delta after Phase 3.5 completes. If the reviewer WAS down-classified, skip the re-review.
+9. Verify the outcome matches the approved plan and the review verdict.
+10. Proceed to Phase 4.
 
 ---
 
@@ -286,6 +381,7 @@ Then spawn all four agents. They are independent and can run in any order — sp
 > Then analyse this session and return a Lessons Learned report.
 >
 > Session handoff:
+> - Command run: /impl:code    (canonical workflow — use this value whether the user invoked /impl:code directly or the /impl alias; the alias is a transport detail, not a distinct workflow)
 > - What was done: [one-paragraph summary of the implementation]
 > - Key events: [BLOCK reviews encountered and their reason, test regressions, workarounds, unexpected ambiguities — or 'none']
 > - Workarounds used: [manual steps not automated by the workflow — or 'none']
@@ -348,13 +444,17 @@ Output a structured report — do NOT ask any closing confirmation:
 - NEVER skip Phase 1.5 classification — every run must state the level
 - NEVER use Opus for routine implementation; reserve it for planning + review on SIGNIFICANT / HIGH-RISK
 - NEVER run tests on SIGNIFICANT / HIGH-RISK work before the Opus code review returns a non-BLOCK verdict
+- NEVER skip Phase 3.5 — if no test framework is detected, ask the user rather than silently skipping; a "Skip" decision must be explicit and logged in the Phase 5 report
 - NEVER make assumptions that could have been asked — ask instead
 - NEVER end implementation with "Should I implement?" — if approved, implement
 - NEVER rewrite files wholesale when only an append/edit is needed
 - NEVER skip Phase 4 — documentation, knowledge, instructions, and session-maintenance are mandatory after every successful impl; always collect all four agent summaries for Phase 5
+- ALWAYS capture a test baseline (Pre-Phase 3.5) before writing any file
 - ALWAYS create a feature branch (Pre-Phase 3) before writing any file — never implement directly on the default branch
 - ALWAYS check for a clean working tree before branching; stash or get explicit user consent if dirty
 - ALWAYS spawn Phase 4 agents in a single message — never sequentially
 - ALWAYS use `choices` arrays for decision points; last choice is always `"Other… (describe)"`
 - ALWAYS produce the Phase 5 report as the final output
+- ALWAYS pass `Command run: /impl:code` in the Phase 4 Agent 4 session handoff, whether the user invoked `/impl:code` directly or the `/impl` alias — the alias is a transport detail, not a distinct workflow
 - AFTER one review-fixer pass + one re-review, if verdict is still BLOCK: stop and surface to user — do NOT loop
+- AFTER two Phase 3.5 fix-loop attempts, if regressions remain: stop and surface to user — do NOT loop

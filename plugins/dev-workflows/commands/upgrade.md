@@ -215,6 +215,7 @@ After all components: print the summary table (Output section). Then invoke the 
   > Then analyse this session and return a Lessons Learned report.
   >
   > Session handoff:
+  > - Command run: /upgrade
   > - What was done: [summary: N components upgraded — list each component, from→to, classification, outcome (OK/SKIPPED/BLOCKED)]
   > - Key events: [BLOCK reviews and their reasons, test regressions, build failures, workarounds, compatibility surprises, missing reference docs — or 'none']
   > - Workarounds used: [manual steps not automated — or 'none']

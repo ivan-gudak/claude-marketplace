@@ -226,6 +226,7 @@ After all CVEs in the batch have been processed (fixed, committed, and PRed — 
   > Then analyse this session and return a Lessons Learned report.
   >
   > Session handoff:
+  > - Command run: /vuln
   > - What was done: [summary: N CVEs processed — list each CVE-ID, library, classification, outcome (fixed/skipped/blocked)]
   > - Key events: [BLOCK reviews and their reason, test regressions, workarounds needed, NVD lookup failures, Detect failures, missing reference docs — or 'none']
   > - Workarounds used: [manual steps not automated — or 'none']
