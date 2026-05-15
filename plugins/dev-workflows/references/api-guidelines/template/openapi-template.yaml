@@ -1,0 +1,180 @@
+openapi: '3.0.3'
+info:
+  title: 'My Title'
+  description: |
+    # Overview
+    the quick brown fox **jumps** over the _lazy_ dog
+    ## Subsection
+    the quick brown fox jumps over the lazy dog
+  version: '0.1.0'
+
+tags:
+  - name: 'My Tag'
+    description: 'My Description'
+
+servers:
+
+  # see "General Structure.md" and "OpenAPI.md" for details
+
+  # base url in the k8s cluster is relative
+  - url: '/<api-type>[/<api-identifier>]/<api-version>'                                              # api-type = "public" | "reserved" | "internal" | "operations"
+
+  # base url in the API gateway is relative to the API gateway root url
+    x-api-gateway-url: '/<api-location>[/<service namespace>]/<public service name>/<api version>'   # api-location = "platform" | "platform-internal" | "platform-reserved"
+
+
+paths:
+
+  # endpoints are relative to the base urls
+
+  /<path entry>:
+    parameters:
+      - $ref: "#/components/parameters/dtTenantHeader"
+      # ...
+    post:
+      summary: 'Create a new element, for example'
+      tags:
+        - "My Tag"
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "4XX":
+          $ref: "#/components/responses/GeneralError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "5XX":
+          $ref: "#/components/responses/GeneralError"
+        default:
+          $ref: "#/components/responses/GeneralError"
+
+components:
+  # see https://swagger.io/docs/specification/authentication/oauth2/
+  securitySchemes:
+    ssoAuth:
+      type: oauth2
+      description: This API uses Oauth2 with the 'Client Credentials' flow
+      flows: 
+        clientCredentials:
+          tokenUrl: https://<sso>/sso/oauth2/token                  ## placeholder to be replaced in the API Gateway
+          scopes:                        ## scope naming see permission guidelines for details
+            <service name>:<resource>:<action>: access scope        
+            
+
+  parameters:
+    dtTenantHeader:
+      in: header
+      name: Dt-Tenant
+      description: Dynatrace tenant context header
+      schema:
+        type: string
+      required: true
+      
+    dtAppContextHeader:
+      in: header
+      name: Dt-App-Context
+      description: Dynatrace application context context header
+      schema:
+        type: string
+      required: true  
+
+  schemas:
+    ErrorEnvelope:
+      type: "object"
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
+      required:
+      - "error"
+    Error:
+      type: "object"
+      description: "Standard error response"
+      properties:
+        code:
+          type: "number"
+          format: "int32"
+          description: "The error code (HTTP response)"
+        message:
+          type: "string"
+          description: "The error code (HTTP response)"
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+      required:
+      - "code"
+      - "message"
+    ErrorDetails:
+     type: "object"
+     description: "Optional details of the error"
+     properties:
+        errorRef:
+          type: "string"
+          format: "uuid"
+          description: "reference to the error occurence in the internal self-monitoring, logging, etc."
+        constraintViolations:
+          type: "array"
+          description: "A list of constraint violations of input parameters (path, query, request body)"
+          items:
+            $ref: "#/components/schemas/ConstraintViolation"
+    ConstraintViolation:
+      type: "object"
+      description: "Contains information about a constraint violation caused by invalid input."
+      properties:
+        path:
+          type: "string"
+          description: "The path of the parameter that caused the constraint violation"
+        message:
+          type: "string"
+          description: "The constraint violation description message"
+      required:
+        - "message"
+      
+  responses:
+    BadRequest:
+      description: "Malformed request or invalid parameters."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unauthorized:
+      description: "Insufficient permissions."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Forbidden:
+      description: "Access denied."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: "Resource not found."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    InternalServerError:
+      description: "There is a problem in the backend."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ServiceUnavailable:
+      description: "Service Unavailable."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    GeneralError:
+      description: "Error."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
